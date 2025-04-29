@@ -1,20 +1,23 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useAuth } from './AuthContext';
 import { useRepository } from './RepositoryContext';
-import { Note, NoteFile, SyncStatus } from '../types';
+import { Note, NoteFile, SyncStatus, Folder } from '../types';
 
 interface NoteContextType {
   notes: Note[];
+  folders: Folder[];
   currentNote: Note | null;
   syncStatus: SyncStatus;
   loading: boolean;
   error: string | null;
   fetchNotes: () => Promise<void>;
-  createNote: (title: string, content: string) => Promise<Note | null>;
-  updateNote: (id: string, content: string) => Promise<void>;
+  createNote: (title: string, content: string, folder?: string) => Promise<Note | null>;
+  updateNote: (id: string, content: string, folder?: string) => Promise<void>;
   deleteNote: (id: string) => Promise<void>;
   setCurrentNote: (note: Note | null) => void;
   syncNotes: () => Promise<void>;
+  createFolder: (name: string) => Promise<Folder | null>;
+  deleteFolder: (id: string) => Promise<void>;
 }
 
 const NoteContext = createContext<NoteContextType | undefined>(undefined);
@@ -23,18 +26,20 @@ const NoteContext = createContext<NoteContextType | undefined>(undefined);
 const NOTE_PREFIX = 'note_';
 const NOTES_STORAGE_KEY = 'commitpad_notes';
 const CURRENT_NOTE_KEY = 'commitpad_current_note';
+const FOLDERS_STORAGE_KEY = 'commitpad_folders';
 
 export const NoteProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { authState, getOctokit } = useAuth();
   const { selectedRepository } = useRepository();
   
   const [notes, setNotes] = useState<Note[]>([]);
+  const [folders, setFolders] = useState<Folder[]>([]);
   const [currentNote, setCurrentNote] = useState<Note | null>(null);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('synced');
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Load notes from localStorage on start
+  // Load notes and folders from localStorage on start
   useEffect(() => {
     const storedNotes = localStorage.getItem(NOTES_STORAGE_KEY);
     if (storedNotes) {
@@ -42,6 +47,15 @@ export const NoteProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setNotes(JSON.parse(storedNotes));
       } catch (e) {
         localStorage.removeItem(NOTES_STORAGE_KEY);
+      }
+    }
+    
+    const storedFolders = localStorage.getItem(FOLDERS_STORAGE_KEY);
+    if (storedFolders) {
+      try {
+        setFolders(JSON.parse(storedFolders));
+      } catch (e) {
+        localStorage.removeItem(FOLDERS_STORAGE_KEY);
       }
     }
     
@@ -74,6 +88,13 @@ export const NoteProvider: React.FC<{ children: React.ReactNode }> = ({ children
       localStorage.setItem(NOTES_STORAGE_KEY, JSON.stringify(notes));
     }
   }, [notes]);
+  
+  // Update localStorage when folders change
+  useEffect(() => {
+    if (folders.length > 0) {
+      localStorage.setItem(FOLDERS_STORAGE_KEY, JSON.stringify(folders));
+    }
+  }, [folders]);
   
   // Update localStorage when current note changes
   useEffect(() => {
@@ -183,12 +204,16 @@ export const NoteProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const createNote = async (title: string, content: string): Promise<Note | null> => {
+  const createNote = async (title: string, content: string, folder: string = ''): Promise<Note | null> => {
     if (!selectedRepository) return null;
     
     const timestamp = new Date().toISOString();
-    const fileName = `${NOTE_PREFIX}${title.toLowerCase().replace(/\s+/g, '_')}.md`;
-    const path = fileName;
+    let path = `${NOTE_PREFIX}${title.toLowerCase().replace(/\s+/g, '_')}.md`;
+    
+    // Add folder prefix to path if folder is specified
+    if (folder) {
+      path = `${folder}/${path}`;
+    }
     
     // Create note locally first
     const newNote: Note = {
@@ -198,11 +223,24 @@ export const NoteProvider: React.FC<{ children: React.ReactNode }> = ({ children
       path,
       lastModified: timestamp,
       synced: false,
+      folder
     };
     
     setNotes(prev => [...prev, newNote]);
     setCurrentNote(newNote);
     setSyncStatus('pending');
+    
+    // If the note is in a folder, add it to the folder's notes
+    if (folder) {
+      const folderObj = folders.find(f => f.name === folder);
+      if (folderObj) {
+        setFolders(prev => prev.map(f => 
+          f.id === folderObj.id 
+            ? { ...f, notes: [...f.notes, newNote.id] }
+            : f
+        ));
+      }
+    }
     
     // Try to sync with GitHub if we're online
     if (navigator.onLine && authState.isAuthenticated) {
@@ -211,6 +249,27 @@ export const NoteProvider: React.FC<{ children: React.ReactNode }> = ({ children
       try {
         const octokit = getOctokit();
         if (!octokit) throw new Error('Not authenticated');
+        
+        // Create folder if it doesn't exist
+        if (folder) {
+          try {
+            await octokit.repos.getContent({
+              owner: selectedRepository.owner.login,
+              repo: selectedRepository.name,
+              path: folder,
+            });
+          } catch (error) {
+            // Folder doesn't exist, create it
+            await octokit.repos.createOrUpdateFileContents({
+              owner: selectedRepository.owner.login,
+              repo: selectedRepository.name,
+              path: `${folder}/.gitkeep`,
+              message: `Create folder: ${folder}`,
+              content: btoa(''),
+              branch: selectedRepository.default_branch,
+            });
+          }
+        }
         
         const response = await octokit.repos.createOrUpdateFileContents({
           owner: selectedRepository.owner.login,
@@ -247,7 +306,7 @@ export const NoteProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return newNote;
   };
 
-  const updateNote = async (id: string, content: string): Promise<void> => {
+  const updateNote = async (id: string, content: string, folder?: string): Promise<void> => {
     if (!selectedRepository) return;
     
     // Update locally first
@@ -255,11 +314,21 @@ export const NoteProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!noteToUpdate) return;
     
     const timestamp = new Date().toISOString();
+    
+    // If folder is changing, update the path
+    let path = noteToUpdate.path;
+    if (folder !== undefined && folder !== noteToUpdate.folder) {
+      const fileName = path.split('/').pop() || '';
+      path = folder ? `${folder}/${fileName}` : fileName;
+    }
+    
     const updatedNote: Note = {
       ...noteToUpdate,
       content,
       lastModified: timestamp,
       synced: false,
+      folder: folder !== undefined ? folder : noteToUpdate.folder,
+      path
     };
     
     setNotes(prev => 
@@ -268,6 +337,33 @@ export const NoteProvider: React.FC<{ children: React.ReactNode }> = ({ children
     
     if (currentNote?.id === id) {
       setCurrentNote(updatedNote);
+    }
+    
+    // Update folder references
+    if (folder !== undefined && folder !== noteToUpdate.folder) {
+      // Remove from old folder
+      if (noteToUpdate.folder) {
+        const oldFolder = folders.find(f => f.name === noteToUpdate.folder);
+        if (oldFolder) {
+          setFolders(prev => prev.map(f => 
+            f.id === oldFolder.id 
+              ? { ...f, notes: f.notes.filter(noteId => noteId !== id) }
+              : f
+          ));
+        }
+      }
+      
+      // Add to new folder
+      if (folder) {
+        const newFolder = folders.find(f => f.name === folder);
+        if (newFolder) {
+          setFolders(prev => prev.map(f => 
+            f.id === newFolder.id 
+              ? { ...f, notes: [...f.notes, id] }
+              : f
+          ));
+        }
+      }
     }
     
     setSyncStatus('pending');
@@ -445,22 +541,117 @@ export const NoteProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  // Create a new folder
+  const createFolder = async (name: string): Promise<Folder | null> => {
+    if (!selectedRepository) return null;
+    
+    const folderId = `folder_${Date.now()}`;
+    const path = name.toLowerCase().replace(/\s+/g, '_');
+    
+    const newFolder: Folder = {
+      id: folderId,
+      name,
+      path,
+      notes: []
+    };
+    
+    setFolders(prev => [...prev, newFolder]);
+    
+    // Try to create the folder on GitHub
+    if (navigator.onLine && authState.isAuthenticated) {
+      setLoading(true);
+      
+      try {
+        const octokit = getOctokit();
+        if (!octokit) throw new Error('Not authenticated');
+        
+        await octokit.repos.createOrUpdateFileContents({
+          owner: selectedRepository.owner.login,
+          repo: selectedRepository.name,
+          path: `${path}/.gitkeep`,
+          message: `Create folder: ${name}`,
+          content: btoa(''),
+          branch: selectedRepository.default_branch,
+        });
+        
+        return newFolder;
+      } catch (error) {
+        console.error('Error creating folder on GitHub:', error);
+        return newFolder;
+      } finally {
+        setLoading(false);
+      }
+    }
+    
+    return newFolder;
+  };
+  
+  // Delete a folder and all its notes
+  const deleteFolder = async (id: string): Promise<void> => {
+    if (!selectedRepository) return;
+    
+    const folderToDelete = folders.find(folder => folder.id === id);
+    if (!folderToDelete) return;
+    
+    // Delete all notes in the folder
+    const folderNotes = notes.filter(note => note.folder === folderToDelete.name);
+    for (const note of folderNotes) {
+      await deleteNote(note.id);
+    }
+    
+    // Delete the folder locally
+    setFolders(prev => prev.filter(folder => folder.id !== id));
+    
+    // Try to delete the folder on GitHub (by removing .gitkeep)
+    if (navigator.onLine && authState.isAuthenticated) {
+      try {
+        const octokit = getOctokit();
+        if (!octokit) throw new Error('Not authenticated');
+        
+        // Try to get the .gitkeep file
+        try {
+          const { data: fileData } = await octokit.repos.getContent({
+            owner: selectedRepository.owner.login,
+            repo: selectedRepository.name,
+            path: `${folderToDelete.path}/.gitkeep`,
+          });
+          
+          if ('sha' in fileData) {
+            await octokit.repos.deleteFile({
+              owner: selectedRepository.owner.login,
+              repo: selectedRepository.name,
+              path: `${folderToDelete.path}/.gitkeep`,
+              message: `Delete folder: ${folderToDelete.name}`,
+              sha: fileData.sha,
+              branch: selectedRepository.default_branch,
+            });
+          }
+        } catch (error) {
+          console.error('Error deleting folder on GitHub:', error);
+        }
+      } catch (error) {
+        console.error('Error deleting folder:', error);
+      }
+    }
+  };
+
   return (
-    <NoteContext.Provider
-      value={{
-        notes,
-        currentNote,
-        syncStatus,
-        loading,
-        error,
-        fetchNotes,
-        createNote,
-        updateNote,
-        deleteNote,
-        setCurrentNote,
-        syncNotes,
-      }}
-    >
+    <NoteContext.Provider value={{
+      notes,
+      folders,
+      currentNote,
+      syncStatus,
+      loading,
+      error,
+      fetchNotes,
+      createNote,
+      updateNote,
+      deleteNote,
+      setCurrentNote,
+      syncNotes,
+      createFolder,
+      deleteFolder
+    }}>
       {children}
     </NoteContext.Provider>
   );
