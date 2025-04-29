@@ -73,9 +73,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const handleAuthCallback = async (code: string) => {
     setAuthState(prev => ({ ...prev, loading: true, error: null }));
+    console.log('Handling auth callback with code:', code.substring(0, 5) + '...');
     
     try {
       // Exchange code for token using our Netlify function
+      console.log('Calling Netlify function for token exchange');
       const tokenResponse = await fetch('/.netlify/functions/github-auth', {
         method: 'POST',
         headers: {
@@ -86,11 +88,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }),
       });
 
+      console.log('Token response status:', tokenResponse.status);
+      
       if (!tokenResponse.ok) {
-        throw new Error('Failed to exchange code for token');
+        const errorText = await tokenResponse.text();
+        console.error('Token response error:', errorText);
+        throw new Error(`Failed to exchange code for token: ${tokenResponse.status} ${errorText}`);
       }
 
       const tokenData = await tokenResponse.json();
+      console.log('Received token data:', tokenData.error ? 'Error' : 'Success');
       
       if (tokenData.error) {
         throw new Error(tokenData.error_description || 'Failed to get access token');
@@ -101,6 +108,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (!token) {
         throw new Error('No access token received');
       }
+
+      console.log('Successfully received access token');
 
       // Create an Octokit instance with the token
       const octokit = new Octokit({ auth: token });
