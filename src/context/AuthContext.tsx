@@ -22,7 +22,8 @@ export const useAuth = () => {
 
 // GitHub OAuth configuration
 const CLIENT_ID = 'Ov23li62SpDD7SKp9Kjb';
-const CLIENT_SECRET = 'ba02cd6b5f0bd8667e79a6d49a2e43eb88aa2e8b';
+// SECURITY RISK: Never store client secrets in frontend code
+// const CLIENT_SECRET = 'ba02cd6b5f0bd8667e79a6d49a2e43eb88aa2e8b';
 const REDIRECT_URI = 'https://golden-kheer-6876e9.netlify.app/auth/callback';
 const AUTH_STORAGE_KEY = 'commitpad_auth';
 
@@ -74,17 +75,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setAuthState(prev => ({ ...prev, loading: true, error: null }));
     
     try {
-      // Exchange code for token using our proxy
-      const tokenResponse = await fetch('/github-auth/access_token', {
+      // Exchange code for token using our Netlify function
+      const tokenResponse = await fetch('/.netlify/functions/github-auth', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          client_id: CLIENT_ID,
-          client_secret: CLIENT_SECRET,
           code,
-          redirect_uri: REDIRECT_URI,
         }),
       });
 
