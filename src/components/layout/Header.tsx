@@ -2,16 +2,24 @@ import React from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useRepository } from '../../context/RepositoryContext';
 import { useNotes } from '../../context/NoteContext';
-import { Github as GitHub, Moon, Sun, Save, Settings } from 'lucide-react';
+import { Github as GitHub, Moon, Sun, Save, Settings, Maximize } from 'lucide-react';
 import { useSettings } from '../../context/SettingsContext';
 
 interface HeaderProps {
   openSettings: () => void;
   isPreviewMode: boolean;
   togglePreviewMode: () => void;
+  isFocusMode: boolean;
+  toggleFocusMode: () => void;
 }
 
-const Header: React.FC<HeaderProps> = ({ openSettings, isPreviewMode, togglePreviewMode }) => {
+const Header: React.FC<HeaderProps> = ({ 
+  openSettings, 
+  isPreviewMode, 
+  togglePreviewMode,
+  isFocusMode,
+  toggleFocusMode
+}) => {
   const { authState, logout } = useAuth();
   const { selectedRepository } = useRepository();
   const { syncStatus, syncNotes } = useNotes();
@@ -70,6 +78,15 @@ const Header: React.FC<HeaderProps> = ({ openSettings, isPreviewMode, togglePrev
           ) : (
             <Moon className="h-5 w-5" />
           )}
+        </button>
+        
+        <button
+          onClick={toggleFocusMode}
+          className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors"
+          aria-label="Enter focus mode"
+          title="Enter focus mode"
+        >
+          <Maximize className="h-5 w-5" />
         </button>
         
         <button

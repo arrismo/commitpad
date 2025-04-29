@@ -31,6 +31,14 @@ export interface Note {
   path: string;
   lastModified: string;
   synced: boolean;
+  folder: string;
+}
+
+export interface Folder {
+  id: string;
+  name: string;
+  path: string;
+  notes: string[];
 }
 
 export interface NoteFile {
