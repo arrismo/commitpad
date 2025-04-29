@@ -1,23 +1,8 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
-import { createProxyMiddleware } from 'http-proxy-middleware';
 
 export default defineConfig({
-  server: {
-    proxy: {
-      '/github-auth': {
-        target: 'https://github.com/login/oauth',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/github-auth/, ''),
-        configure: (proxy) => {
-          proxy.on('proxyReq', (proxyReq) => {
-            proxyReq.setHeader('Accept', 'application/json');
-          });
-        },
-      },
-    },
-  },
   plugins: [
     react(),
     VitePWA({
