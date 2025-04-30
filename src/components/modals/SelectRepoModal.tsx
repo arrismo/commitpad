@@ -14,6 +14,7 @@ const SelectRepoModal: React.FC<SelectRepoModalProps> = ({ isOpen, onClose, onCr
   const [searchTerm, setSearchTerm] = useState('');
   
   useEffect(() => {
+    console.log('SelectRepoModal useEffect triggered. isOpen:', isOpen);
     if (isOpen) {
       fetchRepositories();
     }
