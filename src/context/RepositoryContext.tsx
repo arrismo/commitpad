@@ -40,6 +40,7 @@ export const RepositoryProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     
     setLoading(true);
     setError(null);
+    console.log('Fetching repositories...');
     
     try {
       const octokit = getOctokit();
@@ -52,11 +53,13 @@ export const RepositoryProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         per_page: 100,
       });
       
+      console.log('Repositories fetched:', response.data);
       setRepositories(response.data);
     } catch (error) {
       console.error('Error fetching repositories:', error);
       setError('Failed to fetch repositories');
     } finally {
+      console.log('Finished fetching repositories.');
       setLoading(false);
     }
   };
