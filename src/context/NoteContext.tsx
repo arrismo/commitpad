@@ -124,12 +124,12 @@ export const NoteProvider: React.FC<{ children: React.ReactNode }> = ({ children
         path: '',
       });
       
-      // Filter for markdown files
+      // Filter for markdown files excluding README.md
       const noteFiles: NoteFile[] = Array.isArray(repoContent)
         ? repoContent
             .filter(item => 
               item.type === 'file' && 
-              (item.name.startsWith(NOTE_PREFIX) || item.name.endsWith('.md'))
+              (item.name.startsWith(NOTE_PREFIX) || (item.name.endsWith('.md') && item.name !== 'README.md'))
             )
             .map(item => ({
               name: item.name,
