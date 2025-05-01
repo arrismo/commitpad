@@ -69,6 +69,7 @@ const Sidebar: React.FC<SidebarProps> = ({ openCreateRepo }) => {
             onClick={() => handleCreateNote()}
             className="p-1.5 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300"
             aria-label="Create new note"
+            title="Create new note"
           >
             <Plus className="h-4 w-4" />
           </button>
@@ -77,6 +78,7 @@ const Sidebar: React.FC<SidebarProps> = ({ openCreateRepo }) => {
             onClick={() => setIsCreatingFolder(true)}
             className="p-1.5 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300"
             aria-label="Create new folder"
+            title="Create new folder"
           >
             <FolderPlus className="h-4 w-4" />
           </button>
@@ -86,6 +88,7 @@ const Sidebar: React.FC<SidebarProps> = ({ openCreateRepo }) => {
               onClick={openCreateRepo}
               className="p-1.5 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300"
               aria-label="Create repository"
+              title="Create repository"
             >
               <FolderPlus className="h-4 w-4" />
             </button>

@@ -353,10 +353,7 @@ export const NoteProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setCurrentNote(null);
     }
     
-    // Delete from GitHub if we're online
     if (navigator.onLine && authState.isAuthenticated && selectedRepository) {
-      setLoading(true);
-      
       try {
         const octokit = getOctokit();
         if (!octokit) throw new Error('Not authenticated');
@@ -384,8 +381,6 @@ export const NoteProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } catch (error) {
         console.error('Error deleting note from GitHub:', error);
         setSyncStatus('offline');
-      } finally {
-        setLoading(false);
       }
     }
   };
