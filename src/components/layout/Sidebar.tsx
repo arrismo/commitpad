@@ -2,19 +2,25 @@ import React, { useState } from 'react';
 import { useNotes } from '../../context/NoteContext';
 import { useRepository } from '../../context/RepositoryContext';
 import { Note, Folder } from '../../types';
-import { Plus, Search, FolderPlus, ChevronRight, ChevronDown, Folder as FolderIcon, File } from 'lucide-react';
+import { Plus, Search, FolderPlus, ChevronRight, ChevronDown, Folder as FolderIcon, File, X } from 'lucide-react';
 
 interface SidebarProps {
   openCreateRepo: () => void;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ openCreateRepo }) => {
-  const { notes, folders, currentNote, setCurrentNote, createNote, createFolder } = useNotes();
+  const { notes, folders, currentNote, setCurrentNote, createNote, createFolder, deleteNote } = useNotes();
   const { selectedRepository } = useRepository();
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
   const [newFolderName, setNewFolderName] = useState('');
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
+  
+  const handleDeleteNote = async (noteId: string) => {
+    if (window.confirm('Are you sure you want to delete this note?')) {
+      await deleteNote(noteId);
+    }
+  };
   
   const handleCreateNote = (folderName?: string) => {
     if (!selectedRepository) {
@@ -182,6 +188,8 @@ const Sidebar: React.FC<SidebarProps> = ({ openCreateRepo }) => {
                       note={note}
                       isActive={currentNote?.id === note.id}
                       onClick={() => setCurrentNote(note)}
+                      onDelete={deleteNote}
+                      inFolder
                     />
                   ))}
                 </ul>
@@ -247,6 +255,7 @@ const FolderItem: React.FC<FolderItemProps> = ({
               note={note}
               isActive={currentNoteId === note.id}
               onClick={() => onNoteClick(note)}
+              onDelete={deleteNote}
               inFolder
             />
           ))}
@@ -267,9 +276,10 @@ interface NoteItemProps {
   isActive: boolean;
   onClick: () => void;
   inFolder?: boolean;
+  onDelete?: (id: string) => void;
 }
 
-const NoteItem: React.FC<NoteItemProps> = ({ note, isActive, onClick, inFolder = false }) => {
+const NoteItem: React.FC<NoteItemProps> = ({ note, isActive, onClick, inFolder = false, onDelete }) => {
   // Get first 2 lines and truncate
   const contentPreview = note.content
     .split('\n')
@@ -289,11 +299,28 @@ const NoteItem: React.FC<NoteItemProps> = ({ note, isActive, onClick, inFolder =
       onClick={onClick}
     >
       <div className={`px-${inFolder ? '2' : '3'} py-2`}>
-        <div className="flex items-center">
-          <File className="h-3.5 w-3.5 mr-1.5 text-gray-400" />
-          <h3 className="font-medium text-sm text-slate-800 dark:text-slate-200 truncate">
-            {note.title}
-          </h3>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center">
+            <File className="h-3.5 w-3.5 mr-1.5 text-gray-400" />
+            <h3 className="font-medium text-sm text-slate-800 dark:text-slate-200 truncate">
+              {note.title}
+            </h3>
+          </div>
+          {onDelete && (
+            <button 
+              onClick={(e) => {
+                e.stopPropagation();
+                if (window.confirm('Are you sure you want to delete this note?')) {
+                  onDelete(note.id);
+                }
+              }}
+              className="p-1 rounded hover:bg-red-100 dark:hover:bg-red-800 text-red-600 dark:text-red-400"
+              aria-label="Delete note"
+              title="Delete note"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
         </div>
         <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 line-clamp-2">
           {contentPreview}
