@@ -112,88 +112,9 @@ export const NoteProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setError(null);
     
     try {
-      const octokit = getOctokit();
-      if (!octokit) {
-        throw new Error('Not authenticated');
-      }
-      
-      // Fetch the tree of the repository
-      const { data: repoContent } = await octokit.repos.getContent({
-        owner: selectedRepository.owner.login,
-        repo: selectedRepository.name,
-        path: '',
-      });
-      
-      // Filter for markdown files excluding README.md
-      const noteFiles: NoteFile[] = Array.isArray(repoContent)
-        ? repoContent
-            .filter(item => 
-              item.type === 'file' && 
-              (item.name.startsWith(NOTE_PREFIX) || (item.name.endsWith('.md') && item.name !== 'README.md'))
-            )
-            .map(item => ({
-              name: item.name,
-              path: item.path,
-              sha: item.sha,
-              type: 'file'
-            }))
-        : [];
-      
-      // Fetch content for each note file
-      const notesPromises = noteFiles.map(async file => {
-        try {
-          const response = await octokit.repos.getContent({
-            owner: selectedRepository.owner.login,
-            repo: selectedRepository.name,
-            path: file.path,
-          });
-          
-          // GitHub API returns content as base64 encoded
-          const content = response.data.type === 'file' 
-            ? atob(response.data.content.replace(/\s/g, ''))
-            : '';
-          
-          // Extract title from first line or filename
-          const title = content.split('\n')[0].replace(/^#\s+/, '') || 
-            file.name.replace(/\.md$/, '').replace(NOTE_PREFIX, '');
-          
-          return {
-            id: file.sha,
-            title,
-            content,
-            path: file.path,
-            lastModified: new Date().toISOString(),
-            synced: true,
-          };
-        } catch (error) {
-          console.error(`Error fetching note ${file.path}:`, error);
-          return null;
-        }
-      });
-      
-      const fetchedNotes = (await Promise.all(notesPromises)).filter(Boolean) as Note[];
-      
-      // Merge with local notes (prefer newer versions and local unsynced notes)
-      const mergedNotes = [...notes];
-      
-      fetchedNotes.forEach(fetchedNote => {
-        const localNoteIndex = mergedNotes.findIndex(n => n.path === fetchedNote.path);
-        if (localNoteIndex >= 0) {
-          // If local note is unsynced, keep it, otherwise use the fetched one
-          if (!mergedNotes[localNoteIndex].synced) {
-            // Keep local note but mark as conflicted if content differs
-            if (mergedNotes[localNoteIndex].content !== fetchedNote.content) {
-              setSyncStatus('conflicted');
-            }
-          } else {
-            mergedNotes[localNoteIndex] = fetchedNote;
-          }
-        } else {
-          mergedNotes.push(fetchedNote);
-        }
-      });
-      
-      setNotes(mergedNotes);
+      // Skip fetching from the repository
+      // Only show locally created notes
+      setNotes(prevNotes => prevNotes.filter(note => !note.synced));
       setSyncStatus(navigator.onLine ? 'synced' : 'offline');
     } catch (error) {
       console.error('Error fetching notes:', error);
