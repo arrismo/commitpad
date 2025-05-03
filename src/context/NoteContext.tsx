@@ -129,8 +129,8 @@ export const NoteProvider: React.FC<{ children: React.ReactNode }> = ({ children
             files = files.concat(await getFilesRecursively(item.path));
           } else if (
             item.type === 'file' &&
-            item.name.toLowerCase() !== 'readme.md' &&
-            item.name.toLowerCase() !== '.gitkeep' // also skip .gitkeep
+            item.name.toLowerCase().endsWith('.md') &&
+            item.name.toLowerCase() !== 'readme.md'
           ) {
             files.push(item);
           }
