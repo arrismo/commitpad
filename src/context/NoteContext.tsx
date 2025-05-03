@@ -107,15 +107,66 @@ export const NoteProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const fetchNotes = async () => {
     if (!authState.isAuthenticated || !selectedRepository) return;
-    
+
     setLoading(true);
     setError(null);
-    
+
     try {
-      // Skip fetching from the repository
-      // Only show locally created notes
-      setNotes(prevNotes => prevNotes.filter(note => !note.synced));
-      setSyncStatus(navigator.onLine ? 'synced' : 'offline');
+      const octokit = getOctokit();
+      if (!octokit) throw new Error('Not authenticated');
+
+      // Recursively get all files except README.md
+      const getFilesRecursively = async (path = ''): Promise<any[]> => {
+        const { data } = await octokit.repos.getContent({
+          owner: selectedRepository.owner.login,
+          repo: selectedRepository.name,
+          path,
+        });
+
+        let files: any[] = [];
+        for (const item of Array.isArray(data) ? data : [data]) {
+          if (item.type === 'dir') {
+            files = files.concat(await getFilesRecursively(item.path));
+          } else if (
+            item.type === 'file' &&
+            item.name.toLowerCase() !== 'readme.md' &&
+            item.name.toLowerCase() !== '.gitkeep' // also skip .gitkeep
+          ) {
+            files.push(item);
+          }
+        }
+        return files;
+      };
+
+      const files = await getFilesRecursively();
+
+      // Convert files to notes
+      const fetchedNotes = await Promise.all(
+        files.map(async (file: any) => {
+          const { data: fileData } = await octokit.repos.getContent({
+            owner: selectedRepository.owner.login,
+            repo: selectedRepository.name,
+            path: file.path,
+          });
+          const content = atob((fileData as any).content || '');
+          return {
+            id: file.sha,
+            title: file.name.replace(/\.md$/, ''),
+            content,
+            path: file.path,
+            lastModified: file.sha, // Could use commit date if needed
+            synced: true,
+            folder: file.path.includes('/') ? file.path.split('/')[0] : '',
+          };
+        })
+      );
+
+      // Merge with local unsynced notes
+      setNotes(prevNotes => [
+        ...fetchedNotes,
+        ...prevNotes.filter(note => !note.synced),
+      ]);
+      setSyncStatus('synced');
     } catch (error) {
       console.error('Error fetching notes:', error);
       setError('Failed to fetch notes');
