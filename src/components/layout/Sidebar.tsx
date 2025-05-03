@@ -9,12 +9,16 @@ interface SidebarProps {
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ openCreateRepo }) => {
-  const { notes, folders, currentNote, setCurrentNote, createNote, createFolder, deleteNote } = useNotes();
+  const { notes, folders, currentNote, setCurrentNote, createNote, createFolder, deleteNote, deleteFolder, updateNote } = useNotes();
   const { selectedRepository } = useRepository();
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
   const [newFolderName, setNewFolderName] = useState('');
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
+  const [movingNoteId, setMovingNoteId] = useState<string | null>(null);
+  const [moveTargetFolder, setMoveTargetFolder] = useState<string>('');
+  const [draggedNoteId, setDraggedNoteId] = useState<string | null>(null);
+  const [dragOverTarget, setDragOverTarget] = useState<string | null>(null);
   
   const handleDeleteNote = async (noteId: string) => {
     if (window.confirm('Are you sure you want to delete this note?')) {
@@ -51,6 +55,12 @@ const Sidebar: React.FC<SidebarProps> = ({ openCreateRepo }) => {
     }));
   };
   
+  const handleMoveNote = async (noteId: string, folderName: string) => {
+    await updateNote(noteId, notes.find(n => n.id === noteId)?.content || '', folderName);
+    setMovingNoteId(null);
+    setMoveTargetFolder('');
+  };
+  
   const filteredNotes = notes.filter(note => 
     note.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
     note.content.toLowerCase().includes(searchTerm.toLowerCase())
@@ -65,6 +75,37 @@ const Sidebar: React.FC<SidebarProps> = ({ openCreateRepo }) => {
         filteredNotes.some(note => note.folder === folder.name)
       )
     : folders;
+  
+  // Drag and drop handlers
+  const handleNoteDragStart = (noteId: string) => {
+    setDraggedNoteId(noteId);
+  };
+  const handleNoteDragEnd = () => {
+    setDraggedNoteId(null);
+    setDragOverTarget(null);
+  };
+  const handleFolderDragOver = (e: React.DragEvent, folderName: string) => {
+    e.preventDefault();
+    setDragOverTarget(folderName);
+  };
+  const handleFolderDrop = (folderName: string) => {
+    if (draggedNoteId) {
+      handleMoveNote(draggedNoteId, folderName);
+      setDraggedNoteId(null);
+      setDragOverTarget(null);
+    }
+  };
+  const handleUnorganizedDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOverTarget('unorganized');
+  };
+  const handleUnorganizedDrop = () => {
+    if (draggedNoteId) {
+      handleMoveNote(draggedNoteId, '');
+      setDraggedNoteId(null);
+      setDragOverTarget(null);
+    }
+  };
   
   return (
     <div className="w-64 border-r border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-900 h-full flex flex-col transition-colors duration-300">
@@ -168,6 +209,18 @@ const Sidebar: React.FC<SidebarProps> = ({ openCreateRepo }) => {
                     onNoteClick={setCurrentNote}
                     currentNoteId={currentNote?.id}
                     onCreateNote={() => handleCreateNote(folder.name)}
+                    onDeleteFolder={deleteFolder}
+                    movingNoteId={movingNoteId}
+                    moveTargetFolder={moveTargetFolder}
+                    setMovingNoteId={setMovingNoteId}
+                    setMoveTargetFolder={setMoveTargetFolder}
+                    folders={folders}
+                    handleMoveNote={handleMoveNote}
+                    // Drag and drop
+                    onDragOver={e => handleFolderDragOver(e, folder.name)}
+                    onDrop={() => handleFolderDrop(folder.name)}
+                    isDragOver={dragOverTarget === folder.name}
+                    draggedNoteId={draggedNoteId}
                   />
                 ))}
               </div>
@@ -175,7 +228,11 @@ const Sidebar: React.FC<SidebarProps> = ({ openCreateRepo }) => {
             
             {/* Unorganized Notes */}
             {unorganizedNotes.length > 0 && (
-              <div>
+              <div
+                onDragOver={handleUnorganizedDragOver}
+                onDrop={handleUnorganizedDrop}
+                className={dragOverTarget === 'unorganized' ? 'bg-blue-100 dark:bg-blue-900/40' : ''}
+              >
                 {!searchTerm && (
                   <div className="px-3 py-1 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
                     Notes
@@ -189,7 +246,19 @@ const Sidebar: React.FC<SidebarProps> = ({ openCreateRepo }) => {
                       isActive={currentNote?.id === note.id}
                       onClick={() => setCurrentNote(note)}
                       onDelete={deleteNote}
+                      onMove={() => setMovingNoteId(note.id)}
                       inFolder
+                      movingNoteId={movingNoteId}
+                      moveTargetFolder={moveTargetFolder}
+                      setMovingNoteId={setMovingNoteId}
+                      setMoveTargetFolder={setMoveTargetFolder}
+                      folders={folders}
+                      handleMoveNote={handleMoveNote}
+                      // Drag and drop
+                      draggable
+                      onDragStart={() => handleNoteDragStart(note.id)}
+                      onDragEnd={handleNoteDragEnd}
+                      isDragging={draggedNoteId === note.id}
                     />
                   ))}
                 </ul>
@@ -211,6 +280,17 @@ interface FolderItemProps {
   onNoteClick: (note: Note) => void;
   currentNoteId?: string;
   onCreateNote: () => void;
+  onDeleteFolder: (folderId: string) => void;
+  movingNoteId?: string | null;
+  moveTargetFolder?: string;
+  setMovingNoteId?: (id: string | null) => void;
+  setMoveTargetFolder?: (folder: string) => void;
+  folders?: Folder[];
+  handleMoveNote?: (noteId: string, folderName: string) => void;
+  onDragOver?: (e: React.DragEvent) => void;
+  onDrop?: () => void;
+  isDragOver?: boolean;
+  draggedNoteId?: string | null;
 }
 
 const FolderItem: React.FC<FolderItemProps> = ({ 
@@ -220,10 +300,25 @@ const FolderItem: React.FC<FolderItemProps> = ({
   onToggle, 
   onNoteClick,
   currentNoteId,
-  onCreateNote
+  onCreateNote,
+  onDeleteFolder,
+  movingNoteId,
+  moveTargetFolder,
+  setMovingNoteId,
+  setMoveTargetFolder,
+  folders,
+  handleMoveNote,
+  onDragOver,
+  onDrop,
+  isDragOver,
+  draggedNoteId
 }) => {
   return (
-    <div className="mb-1">
+    <div
+      className={`mb-1 ${isDragOver ? 'bg-blue-100 dark:bg-blue-900/40' : ''}`}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+    >
       <div 
         className="flex items-center px-3 py-1.5 hover:bg-gray-100 dark:hover:bg-slate-800 cursor-pointer group"
         onClick={onToggle}
@@ -236,7 +331,7 @@ const FolderItem: React.FC<FolderItemProps> = ({
           {folder.name}
         </span>
         <button 
-          className="p-1 rounded-full opacity-0 group-hover:opacity-100 hover:bg-gray-200 dark:hover:bg-slate-700 text-gray-500 dark:text-gray-400"
+          className="p-1 rounded-full opacity-0 group-hover:opacity-100 hover:bg-slate-200 dark:hover:bg-slate-700 text-gray-500 dark:text-gray-400"
           onClick={(e) => {
             e.stopPropagation();
             onCreateNote();
@@ -244,6 +339,19 @@ const FolderItem: React.FC<FolderItemProps> = ({
           aria-label="Create note in folder"
         >
           <Plus className="h-3 w-3" />
+        </button>
+        <button
+          className="p-1 ml-1 rounded-full opacity-0 group-hover:opacity-100 hover:bg-red-100 dark:hover:bg-red-800 text-red-600 dark:text-red-400"
+          onClick={e => {
+            e.stopPropagation();
+            if (window.confirm('Are you sure you want to delete this folder and all its notes?')) {
+              onDeleteFolder(folder.id);
+            }
+          }}
+          aria-label="Delete folder"
+          title="Delete folder"
+        >
+          <X className="h-3 w-3" />
         </button>
       </div>
       
@@ -255,8 +363,15 @@ const FolderItem: React.FC<FolderItemProps> = ({
               note={note}
               isActive={currentNoteId === note.id}
               onClick={() => onNoteClick(note)}
-              onDelete={deleteNote}
+              onDelete={undefined}
+              onMove={() => setMovingNoteId(note.id)}
               inFolder
+              movingNoteId={movingNoteId}
+              moveTargetFolder={moveTargetFolder}
+              setMovingNoteId={setMovingNoteId}
+              setMoveTargetFolder={setMoveTargetFolder}
+              folders={folders}
+              handleMoveNote={handleMoveNote}
             />
           ))}
         </ul>
@@ -277,9 +392,20 @@ interface NoteItemProps {
   onClick: () => void;
   inFolder?: boolean;
   onDelete?: (id: string) => void;
+  onMove?: (id: string) => void;
+  movingNoteId?: string | null;
+  moveTargetFolder?: string;
+  setMovingNoteId?: (id: string | null) => void;
+  setMoveTargetFolder?: (folder: string) => void;
+  folders?: Folder[];
+  handleMoveNote?: (noteId: string, folderName: string) => void;
+  draggable?: boolean;
+  onDragStart?: () => void;
+  onDragEnd?: () => void;
+  isDragging?: boolean;
 }
 
-const NoteItem: React.FC<NoteItemProps> = ({ note, isActive, onClick, inFolder = false, onDelete }) => {
+const NoteItem: React.FC<NoteItemProps> = ({ note, isActive, onClick, inFolder = false, onDelete, onMove, movingNoteId, moveTargetFolder, setMovingNoteId, setMoveTargetFolder, folders, handleMoveNote, draggable, onDragStart, onDragEnd, isDragging }) => {
   // Get first 2 lines and truncate
   const contentPreview = note.content
     .split('\n')
@@ -295,8 +421,12 @@ const NoteItem: React.FC<NoteItemProps> = ({ note, isActive, onClick, inFolder =
         ${isActive 
           ? 'border-blue-500 bg-blue-50 dark:bg-slate-800' 
           : 'border-transparent hover:bg-gray-100 dark:hover:bg-slate-800'}
+        ${isDragging ? 'opacity-60 ring-2 ring-blue-400' : ''}
       `}
       onClick={onClick}
+      draggable={draggable}
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
     >
       <div className={`px-${inFolder ? '2' : '3'} py-2`}>
         <div className="flex items-center justify-between">
@@ -306,36 +436,70 @@ const NoteItem: React.FC<NoteItemProps> = ({ note, isActive, onClick, inFolder =
               {note.title}
             </h3>
           </div>
-          {onDelete && (
-            <button 
-              onClick={(e) => {
-                e.stopPropagation();
-                if (window.confirm('Are you sure you want to delete this note?')) {
-                  onDelete(note.id);
-                }
-              }}
-              className="p-1 rounded hover:bg-red-100 dark:hover:bg-red-800 text-red-600 dark:text-red-400"
-              aria-label="Delete note"
-              title="Delete note"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          )}
+          <div className="flex items-center gap-1">
+            {onMove && setMovingNoteId && (
+              <button
+                onClick={e => {
+                  e.stopPropagation();
+                  if (onMove) onMove(note.id);
+                }}
+                className="p-1 rounded hover:bg-blue-100 dark:hover:bg-blue-800 text-blue-600 dark:text-blue-400"
+                aria-label="Move note"
+                title="Move note"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            )}
+            {onDelete && (
+              <button 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (window.confirm('Are you sure you want to delete this note?')) {
+                    onDelete(note.id);
+                  }
+                }}
+                className="p-1 rounded hover:bg-red-100 dark:hover:bg-red-800 text-red-600 dark:text-red-400"
+                aria-label="Delete note"
+                title="Delete note"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </div>
         </div>
         <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 line-clamp-2">
           {contentPreview}
         </p>
-        <div className="flex items-center mt-1 text-xs text-slate-400 dark:text-slate-500">
-          <span>
-            {new Date(note.lastModified).toLocaleDateString(undefined, {
-              month: 'short',
-              day: 'numeric',
-            })}
-          </span>
-          {!note.synced && (
-            <span className="ml-2 h-1.5 w-1.5 bg-amber-500 rounded-full"></span>
-          )}
-        </div>
+        {/* Move note dropdown */}
+        {movingNoteId === note.id && setMoveTargetFolder && setMovingNoteId && folders && handleMoveNote && (
+          <div className="mt-2 flex items-center gap-2">
+            <select
+              className="text-xs border rounded px-1 py-0.5"
+              value={moveTargetFolder}
+              onChange={e => setMoveTargetFolder(e.target.value)}
+            >
+              <option value="">No Folder</option>
+              {folders.map(f => (
+                <option key={f.id} value={f.name}>{f.name}</option>
+              ))}
+            </select>
+            <button
+              className="text-xs px-2 py-0.5 rounded bg-blue-500 text-white hover:bg-blue-600"
+              onClick={e => {
+                e.stopPropagation();
+                if (handleMoveNote) handleMoveNote(note.id, moveTargetFolder || '');
+              }}
+            >Move</button>
+            <button
+              className="text-xs px-2 py-0.5 rounded bg-gray-300 text-gray-700 hover:bg-gray-400"
+              onClick={e => {
+                e.stopPropagation();
+                setMovingNoteId(null);
+                setMoveTargetFolder('');
+              }}
+            >Cancel</button>
+          </div>
+        )}
       </div>
     </li>
   );
