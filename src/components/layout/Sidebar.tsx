@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNotes } from '../../context/NoteContext';
 import { useRepository } from '../../context/RepositoryContext';
 import { Note, Folder } from '../../types';
@@ -56,11 +56,17 @@ const Sidebar: React.FC<SidebarProps> = ({ openCreateRepo }) => {
   };
   
   const filteredNotes = notes
-    .filter(note => note.title !== 'README.md')
+    .filter(note => !/^readme(\.md)?$/i.test(note.title))
     .filter(note => 
       note.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
       note.content.toLowerCase().includes(searchTerm.toLowerCase())
     );
+  
+  useEffect(() => {
+    if (currentNote && /^readme(\.md)?$/i.test(currentNote.title) && filteredNotes.length > 0) {
+      setCurrentNote(filteredNotes[0]);
+    }
+  }, [currentNote, filteredNotes, setCurrentNote]);
   
   // Get notes that are not in any folder
   const unorganizedNotes = filteredNotes.filter(note => !note.folder);
