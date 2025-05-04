@@ -107,9 +107,9 @@ export const NoteProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [currentNote]);
 
-  // Fetch notes from Supabase for the selected repo
+  // Fetch notes from Supabase (guarded by userId)
   const fetchNotes = async () => {
-    if (!selectedRepository) return;
+    if (!userId || !selectedRepository) return;
     setLoading(true);
     setError(null);
     try {
@@ -126,6 +126,33 @@ export const NoteProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setLoading(false);
     }
   };
+
+  // Fetch folders from Supabase (guarded by userId)
+  const fetchFolders = async () => {
+    if (!userId || !selectedRepository) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const { data, error } = await supabase
+        .from('folders')
+        .select('*')
+        .eq('repository_id', selectedRepository.id);
+      if (error) throw error;
+      setFolders(data || []);
+    } catch (error) {
+      setError('Failed to fetch folders from Supabase');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Only call fetchNotes/fetchFolders when userId and selectedRepository are set
+  useEffect(() => {
+    if (userId && selectedRepository) {
+      fetchNotes();
+      fetchFolders();
+    }
+  }, [userId, selectedRepository]);
 
   // Create a note in Supabase
   const createNote = async (title: string, content: string): Promise<Note | null> => {
@@ -193,25 +220,6 @@ export const NoteProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // Fetch folders from Supabase for the selected repo
-  const fetchFolders = async () => {
-    if (!selectedRepository) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const { data, error } = await supabase
-        .from('folders')
-        .select('*')
-        .eq('repository_id', selectedRepository.id);
-      if (error) throw error;
-      setFolders(data || []);
-    } catch (error) {
-      setError('Failed to fetch folders from Supabase');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   // Create a folder in Supabase
   const createFolder = async (name: string): Promise<Folder | null> => {
     if (!selectedRepository || !userId) return null;
@@ -257,17 +265,6 @@ export const NoteProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setLoading(false);
     }
   };
-
-  // Fetch notes/folders when selectedRepository changes
-  useEffect(() => {
-    if (selectedRepository) {
-      fetchNotes();
-      fetchFolders();
-    } else {
-      setNotes([]);
-      setFolders([]);
-    }
-  }, [selectedRepository]);
 
   // Sync notes with GitHub
   const syncNotes = async (): Promise<void> => {
@@ -369,12 +366,6 @@ export const NoteProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setLoading(false);
     }
   };
-
-  // On mount, fetch notes and folders
-  useEffect(() => {
-    fetchNotes();
-    // eslint-disable-next-line
-  }, []);
 
   return (
     <NoteContext.Provider value={{
