@@ -2,6 +2,10 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useAuth } from './AuthContext';
 import { useRepository } from './RepositoryContext';
 import { Note, NoteFile, SyncStatus, Folder } from '../types';
+<<<<<<< HEAD
+=======
+import { createClient } from '@supabase/supabase-js';
+>>>>>>> bae69d7ff0408e45fe4e6d7c967c94e05e4fd13a
 
 interface NoteContextType {
   notes: Note[];
@@ -22,11 +26,17 @@ interface NoteContextType {
 
 const NoteContext = createContext<NoteContextType | undefined>(undefined);
 
+<<<<<<< HEAD
 // Prefix to identify CommitPad notes
 const NOTE_PREFIX = 'note_';
 const NOTES_STORAGE_KEY = 'commitpad_notes';
 const CURRENT_NOTE_KEY = 'commitpad_current_note';
 const FOLDERS_STORAGE_KEY = 'commitpad_folders';
+=======
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+>>>>>>> bae69d7ff0408e45fe4e6d7c967c94e05e4fd13a
 
 export const NoteProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { authState, getOctokit } = useAuth();
@@ -105,6 +115,7 @@ export const NoteProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [currentNote]);
 
+<<<<<<< HEAD
   const fetchNotes = async () => {
     if (!authState.isAuthenticated || !selectedRepository) return;
     
@@ -535,12 +546,26 @@ export const NoteProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setSyncStatus('synced');
     } catch (error) {
       console.error('Error syncing notes:', error);
+=======
+  // Fetch notes from Supabase
+  const fetchNotes = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const { data, error } = await supabase.from('notes').select('*');
+      if (error) throw error;
+      setNotes(data || []);
+      setSyncStatus('synced');
+    } catch (error: any) {
+      setError(error.message || 'Failed to fetch notes');
+>>>>>>> bae69d7ff0408e45fe4e6d7c967c94e05e4fd13a
       setSyncStatus('offline');
     } finally {
       setLoading(false);
     }
   };
 
+<<<<<<< HEAD
   // Create a new folder
   const createFolder = async (name: string): Promise<Folder | null> => {
     if (!selectedRepository) return null;
@@ -635,6 +660,122 @@ export const NoteProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+=======
+  // Create a note in Supabase
+  const createNote = async (title: string, content: string, folder: string = ''): Promise<Note | null> => {
+    setLoading(true);
+    setError(null);
+    try {
+      const { data, error } = await supabase.from('notes').insert([{ title, content, folder }]).select().single();
+      if (error) throw error;
+      setNotes(prev => [...prev, data]);
+      setCurrentNote(data);
+      setSyncStatus('synced');
+      return data;
+    } catch (error: any) {
+      setError(error.message || 'Failed to create note');
+      setSyncStatus('offline');
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Update a note in Supabase
+  const updateNote = async (id: string, content: string, folder?: string): Promise<void> => {
+    setLoading(true);
+    setError(null);
+    try {
+      const updateObj: any = { content };
+      if (folder !== undefined) updateObj.folder = folder;
+      const { data, error } = await supabase.from('notes').update(updateObj).eq('id', id).select().single();
+      if (error) throw error;
+      setNotes(prev => prev.map(note => note.id === id ? data : note));
+      if (currentNote?.id === id) setCurrentNote(data);
+      setSyncStatus('synced');
+    } catch (error: any) {
+      setError(error.message || 'Failed to update note');
+      setSyncStatus('offline');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Delete a note in Supabase
+  const deleteNote = async (id: string): Promise<void> => {
+    setLoading(true);
+    setError(null);
+    try {
+      const { error } = await supabase.from('notes').delete().eq('id', id);
+      if (error) throw error;
+      setNotes(prev => prev.filter(note => note.id !== id));
+      if (currentNote?.id === id) setCurrentNote(null);
+      setSyncStatus('synced');
+    } catch (error: any) {
+      setError(error.message || 'Failed to delete note');
+      setSyncStatus('offline');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Fetch folders from Supabase
+  const fetchFolders = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const { data, error } = await supabase.from('folders').select('*');
+      if (error) throw error;
+      setFolders(data || []);
+    } catch (error: any) {
+      setError(error.message || 'Failed to fetch folders');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Create a folder in Supabase
+  const createFolder = async (name: string): Promise<Folder | null> => {
+    setLoading(true);
+    setError(null);
+    try {
+      const { data, error } = await supabase.from('folders').insert([{ name }]).select().single();
+      if (error) throw error;
+      setFolders(prev => [...prev, data]);
+      return data;
+    } catch (error: any) {
+      setError(error.message || 'Failed to create folder');
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Delete a folder in Supabase
+  const deleteFolder = async (id: string): Promise<void> => {
+    setLoading(true);
+    setError(null);
+    try {
+      // Optionally, delete all notes in the folder first
+      await supabase.from('notes').delete().eq('folder', id);
+      const { error } = await supabase.from('folders').delete().eq('id', id);
+      if (error) throw error;
+      setFolders(prev => prev.filter(folder => folder.id !== id));
+    } catch (error: any) {
+      setError(error.message || 'Failed to delete folder');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // On mount, fetch notes and folders
+  useEffect(() => {
+    fetchNotes();
+    fetchFolders();
+    // eslint-disable-next-line
+  }, []);
+
+>>>>>>> bae69d7ff0408e45fe4e6d7c967c94e05e4fd13a
   return (
     <NoteContext.Provider value={{
       notes,

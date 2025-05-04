@@ -33,7 +33,6 @@ const Header: React.FC<HeaderProps> = ({
   return (
     <header className="bg-white dark:bg-slate-800 border-b border-gray-200 dark:border-slate-700 p-3 flex items-center justify-between transition-colors duration-300">
       <div className="flex items-center space-x-2">
-        <GitHub className="h-6 w-6 text-slate-700 dark:text-slate-300" />
         <h1 className="font-semibold text-slate-800 dark:text-white text-xl">CommitPad</h1>
         
         {selectedRepository && (
@@ -72,6 +71,7 @@ const Header: React.FC<HeaderProps> = ({
           onClick={toggleTheme}
           className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors"
           aria-label="Toggle theme"
+          title="Toggle theme"
         >
           {settings.theme === 'dark' ? (
             <Sun className="h-5 w-5" />
@@ -93,6 +93,7 @@ const Header: React.FC<HeaderProps> = ({
           onClick={openSettings}
           className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors"
           aria-label="Settings"
+          title="Settings"
         >
           <Settings className="h-5 w-5" />
         </button>

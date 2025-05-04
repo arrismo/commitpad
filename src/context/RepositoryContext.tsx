@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useAuth } from './AuthContext';
 import { Repository } from '../types';
 
@@ -35,11 +35,12 @@ export const RepositoryProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     }
   }, [authState.isAuthenticated]);
 
-  const fetchRepositories = async () => {
+  const fetchRepositories = useCallback(async () => {
     if (!authState.isAuthenticated) return;
     
     setLoading(true);
     setError(null);
+    console.log('Fetching repositories...');
     
     try {
       const octokit = getOctokit();
@@ -52,21 +53,23 @@ export const RepositoryProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         per_page: 100,
       });
       
+      console.log('Repositories fetched:', response.data);
       setRepositories(response.data);
     } catch (error) {
       console.error('Error fetching repositories:', error);
       setError('Failed to fetch repositories');
     } finally {
+      console.log('Finished fetching repositories.');
       setLoading(false);
     }
-  };
+  }, [authState.isAuthenticated, getOctokit]);
 
-  const selectRepository = (repo: Repository) => {
+  const selectRepository = useCallback((repo: Repository) => {
     setSelectedRepository(repo);
     localStorage.setItem(SELECTED_REPO_KEY, JSON.stringify(repo));
-  };
+  }, []);
 
-  const createRepository = async (name: string, isPrivate: boolean): Promise<Repository | null> => {
+  const createRepository = useCallback(async (name: string, isPrivate: boolean): Promise<Repository | null> => {
     if (!authState.isAuthenticated) return null;
     
     setLoading(true);
@@ -101,7 +104,7 @@ export const RepositoryProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     } finally {
       setLoading(false);
     }
-  };
+  }, [authState.isAuthenticated, getOctokit, selectRepository]);
 
   return (
     <RepositoryContext.Provider

@@ -14,14 +14,16 @@ const SelectRepoModal: React.FC<SelectRepoModalProps> = ({ isOpen, onClose, onCr
   const [searchTerm, setSearchTerm] = useState('');
   
   useEffect(() => {
+    console.log('SelectRepoModal useEffect triggered. isOpen:', isOpen);
     if (isOpen) {
       fetchRepositories();
     }
   }, [isOpen, fetchRepositories]);
   
+
+  console.log('Repositories state:', repositories);
   if (!isOpen) return null;
   
-  const filteredRepos = repositories.filter(repo => 
     repo.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     repo.full_name.toLowerCase().includes(searchTerm.toLowerCase())
   );
