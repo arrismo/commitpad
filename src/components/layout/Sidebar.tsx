@@ -55,10 +55,12 @@ const Sidebar: React.FC<SidebarProps> = ({ openCreateRepo }) => {
     setMoveTargetFolder('');
   };
   
-  const filteredNotes = notes.filter(note => 
-    note.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    note.content.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredNotes = notes
+    .filter(note => note.title !== 'README.md')
+    .filter(note => 
+      note.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      note.content.toLowerCase().includes(searchTerm.toLowerCase())
+    );
   
   // Get notes that are not in any folder
   const unorganizedNotes = filteredNotes.filter(note => !note.folder);
