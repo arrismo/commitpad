@@ -23,11 +23,12 @@ const SelectRepoModal: React.FC<SelectRepoModalProps> = ({ isOpen, onClose, onCr
 
   console.log('Repositories state:', repositories);
   if (!isOpen) return null;
-  
+
+  const filteredRepos = repositories.filter((repo: Repository) =>
     repo.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     repo.full_name.toLowerCase().includes(searchTerm.toLowerCase())
   );
-  
+
   const handleSelectRepo = (repo: Repository) => {
     selectRepository(repo);
     onClose();
