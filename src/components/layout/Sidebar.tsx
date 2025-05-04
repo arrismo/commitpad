@@ -10,18 +10,15 @@ interface SidebarProps {
 
 const Sidebar: React.FC<SidebarProps> = ({ openCreateRepo }) => {
   const { notes, folders, currentNote, setCurrentNote, createNote, createFolder, deleteNote, deleteFolder, updateNote } = useNotes();
+  const { selectedRepository } = useRepository();
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
+  const [newFolderName, setNewFolderName] = useState('');
   const [movingNoteId, setMovingNoteId] = useState<string | null>(null);
   const [moveTargetFolder, setMoveTargetFolder] = useState<string>('');
   const [draggedNoteId, setDraggedNoteId] = useState<string | null>(null);
   const [dragOverTarget, setDragOverTarget] = useState<string | null>(null);
-  
-  const handleDeleteNote = async (noteId: string) => {
-    if (window.confirm('Are you sure you want to delete this note?')) {
-      await deleteNote(noteId);
-    }
-  };
+  const [searchTerm, setSearchTerm] = useState('');
   
   const handleCreateNote = (folderName?: string) => {
     if (!selectedRepository) {
@@ -359,7 +356,7 @@ const FolderItem: React.FC<FolderItemProps> = ({
               key={note.id}
               note={note}
               isActive={currentNoteId === note.id}
-              onClick={() => onNoteClick(note)}
+              onClick={() => onNoteClick && onNoteClick(note)}
               onDelete={undefined}
               onMove={() => setMovingNoteId(note.id)}
               inFolder
