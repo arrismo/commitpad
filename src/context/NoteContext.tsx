@@ -33,9 +33,13 @@ export const NoteProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('synced');
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
 
-  // Get current user's Supabase UID
-  const userId = supabase.auth.user()?.id;
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      setUserId(data?.user?.id ?? null);
+    });
+  }, []);
 
   // Load notes and folders from localStorage on start
   useEffect(() => {
