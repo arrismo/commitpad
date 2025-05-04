@@ -20,6 +20,9 @@ const Sidebar: React.FC<SidebarProps> = ({ openCreateRepo }) => {
   const [dragOverTarget, setDragOverTarget] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   
+  // Debug: log all notes to inspect their properties
+  console.log('NOTES:', notes);
+
   const handleCreateNote = (folderName?: string) => {
     if (!selectedRepository) {
       openCreateRepo();
