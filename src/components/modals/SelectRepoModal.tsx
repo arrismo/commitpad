@@ -20,8 +20,6 @@ const SelectRepoModal: React.FC<SelectRepoModalProps> = ({ isOpen, onClose, onCr
     }
   }, [isOpen, fetchRepositories]);
   
-
-  console.log('Repositories state:', repositories);
   if (!isOpen) return null;
 
   const filteredRepos = repositories.filter((repo: Repository) =>
