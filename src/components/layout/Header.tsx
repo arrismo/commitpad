@@ -40,6 +40,19 @@ const Header: React.FC<HeaderProps> = ({
             {selectedRepository.name}
           </span>
         )}
+        {selectedRepository && (
+          <button
+            className="ml-2 px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded-md transition-colors"
+            onClick={() => {
+              // Custom event or callback to open SelectRepoModal
+              const event = new CustomEvent('open-switch-repo-modal');
+              window.dispatchEvent(event);
+            }}
+            title="Switch Repository"
+          >
+            Switch Repository
+          </button>
+        )}
       </div>
       
       <div className="flex items-center space-x-3">

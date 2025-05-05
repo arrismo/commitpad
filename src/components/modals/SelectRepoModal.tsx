@@ -71,7 +71,7 @@ const SelectRepoModal: React.FC<SelectRepoModalProps> = ({ isOpen, onClose, onCr
           <li
             key={repo.id}
             className="p-4 hover:bg-gray-50 dark:hover:bg-slate-700 cursor-pointer"
-            onClick={() => selectRepository(repo)}
+            onClick={() => handleSelectRepo(repo)}
           >
             <div className="flex items-center justify-between">
               <div>

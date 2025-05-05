@@ -32,8 +32,17 @@ const Editor: React.FC = () => {
   useEffect(() => {
     if (authState.isAuthenticated && !selectedRepository && !isCreateRepoOpen) {
       setIsSelectRepoOpen(true);
+    } else {
+      setIsSelectRepoOpen(false);
     }
   }, [authState.isAuthenticated, selectedRepository, isCreateRepoOpen]);
+  
+  // Listen for the custom event to open the switch repo modal
+  useEffect(() => {
+    const handler = () => setIsSelectRepoOpen(true);
+    window.addEventListener('open-switch-repo-modal', handler);
+    return () => window.removeEventListener('open-switch-repo-modal', handler);
+  }, []);
   
   const toggleFocusMode = () => {
     setIsFocusMode(!isFocusMode);
