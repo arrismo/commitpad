@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import { Octokit } from '@octokit/rest';
 import { AuthState, User } from '../types';
 import { useNavigate } from 'react-router-dom';
+import { supabase } from '../supabaseClient';
 
 interface AuthContextType {
   authState: AuthState;
@@ -21,10 +22,8 @@ export const useAuth = () => {
 };
 
 // GitHub OAuth configuration
-const CLIENT_ID = 'Ov23li62SpDD7SKp9Kjb';
 // SECURITY RISK: Never store client secrets in frontend code
 // const CLIENT_SECRET = 'ba02cd6b5f0bd8667e79a6d49a2e43eb88aa2e8b';
-const REDIRECT_URI = 'https://golden-kheer-6876e9.netlify.app/auth/callback';
 const AUTH_STORAGE_KEY = 'commitpad_auth';
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -151,9 +150,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const login = useCallback(() => {
-    const scope = 'repo,user';
-    const authUrl = `https://github.com/login/oauth/authorize?client_id=${CLIENT_ID}&redirect_uri=${REDIRECT_URI}&scope=${scope}`;
-    window.location.href = authUrl;
+    // Use Supabase's signInWithOAuth with only redirectTo
+    supabase.auth.signInWithOAuth({
+      provider: 'github',
+      options: {
+        redirectTo: window.location.origin + '/auth/callback',
+      },
+    });
   }, []);
 
   const logout = useCallback(() => {
