@@ -128,18 +128,41 @@ export const NoteProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Fetch notes from Supabase (guarded by userId)
   const fetchNotes = async () => {
-    if (!userId || !selectedRepository) return;
+    if (!userId || !selectedRepository) {
+      console.log('Skipping fetchNotes - missing userId or selectedRepository', { userId, selectedRepository });
+      return;
+    }
+    
     setLoading(true);
     setError(null);
+    
     try {
+      console.log('Fetching notes for repository:', selectedRepository.id);
+      
+      // Get current session to ensure we have fresh auth
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        console.error('No active session found when fetching notes');
+        throw new Error('Authentication required');
+      }
+      
       const { data, error } = await supabase
         .from('notes')
         .select('*')
-        .eq('repository_id', selectedRepository.id);
-      if (error) throw error;
+        .eq('repository_id', selectedRepository.id)
+        .eq('user_id', userId);
+        
+      if (error) {
+        console.error('Error fetching notes:', error);
+        throw error;
+      }
+      
+      console.log('Notes fetched successfully:', data?.length || 0);
       setNotes(data || []);
       setSyncStatus(navigator.onLine ? 'synced' : 'offline');
     } catch (error) {
+      console.error('Failed to fetch notes:', error);
       setError('Failed to fetch notes from Supabase');
     } finally {
       setLoading(false);
@@ -148,17 +171,40 @@ export const NoteProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Fetch folders from Supabase (guarded by userId)
   const fetchFolders = async () => {
-    if (!userId || !selectedRepository) return;
+    if (!userId || !selectedRepository) {
+      console.log('Skipping fetchFolders - missing userId or selectedRepository', { userId, selectedRepository });
+      return;
+    }
+    
     setLoading(true);
     setError(null);
+    
     try {
+      console.log('Fetching folders for repository:', selectedRepository.id);
+      
+      // Get current session to ensure we have fresh auth
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        console.error('No active session found when fetching folders');
+        throw new Error('Authentication required');
+      }
+      
       const { data, error } = await supabase
         .from('folders')
         .select('*')
-        .eq('repository_id', selectedRepository.id);
-      if (error) throw error;
+        .eq('repository_id', selectedRepository.id)
+        .eq('user_id', userId);
+        
+      if (error) {
+        console.error('Error fetching folders:', error);
+        throw error;
+      }
+      
+      console.log('Folders fetched successfully:', data?.length || 0);
       setFolders(data || []);
     } catch (error) {
+      console.error('Failed to fetch folders:', error);
       setError('Failed to fetch folders from Supabase');
     } finally {
       setLoading(false);
