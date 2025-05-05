@@ -147,11 +147,11 @@ export const NoteProvider: React.FC<{ children: React.ReactNode }> = ({ children
         throw new Error('Authentication required');
       }
       
+      // First check if we have any notes for this repository
       const { data, error } = await supabase
         .from('notes')
         .select('*')
-        .eq('repository_id', selectedRepository.id)
-        .eq('user_id', userId);
+        .eq('repository_id', selectedRepository.id);
         
       if (error) {
         console.error('Error fetching notes:', error);
@@ -190,11 +190,11 @@ export const NoteProvider: React.FC<{ children: React.ReactNode }> = ({ children
         throw new Error('Authentication required');
       }
       
+      // First check if we have any folders for this repository
       const { data, error } = await supabase
         .from('folders')
         .select('*')
-        .eq('repository_id', selectedRepository.id)
-        .eq('user_id', userId);
+        .eq('repository_id', selectedRepository.id);
         
       if (error) {
         console.error('Error fetching folders:', error);
@@ -230,7 +230,6 @@ export const NoteProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .insert([
           {
             repository_id: selectedRepository.id,
-            user_id: userId,
             title,
             content,
             last_modified: new Date().toISOString(),
@@ -296,7 +295,6 @@ export const NoteProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .insert([
           {
             repository_id: selectedRepository.id,
-            user_id: userId,
             name,
             last_modified: new Date().toISOString(),
           }
