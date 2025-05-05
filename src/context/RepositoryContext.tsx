@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useAuth } from './AuthContext';
 import { Repository } from '../types';
+import { Octokit } from '@octokit/rest';
 
 interface RepositoryContextType {
   repositories: Repository[];
@@ -40,9 +41,25 @@ export const RepositoryProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     
     setLoading(true);
     setError(null);
-    console.log('Fetching repositories...');
+    console.log('Fetching repositories...', authState);
     
     try {
+      // First try using the GitHub token from Supabase auth
+      if (authState.token) {
+        console.log('Using token from auth state to fetch repos');
+        const octokit = new Octokit({ auth: authState.token });
+        
+        const response = await octokit.repos.listForAuthenticatedUser({
+          sort: 'updated',
+          per_page: 100,
+        });
+        
+        console.log('Repositories fetched:', response.data.length);
+        setRepositories(response.data);
+        return;
+      }
+      
+      // Fallback to getOctokit
       const octokit = getOctokit();
       if (!octokit) {
         throw new Error('Not authenticated');
@@ -53,7 +70,7 @@ export const RepositoryProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         per_page: 100,
       });
       
-      console.log('Repositories fetched:', response.data);
+      console.log('Repositories fetched:', response.data.length);
       setRepositories(response.data);
     } catch (error) {
       console.error('Error fetching repositories:', error);
@@ -62,7 +79,7 @@ export const RepositoryProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       console.log('Finished fetching repositories.');
       setLoading(false);
     }
-  }, [authState.isAuthenticated, getOctokit]);
+  }, [authState.isAuthenticated, authState.token, getOctokit]);
 
   const selectRepository = useCallback((repo: Repository) => {
     setSelectedRepository(repo);
