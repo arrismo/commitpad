@@ -126,6 +126,19 @@ export const NoteProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [currentNote]);
 
+  // Helper function to convert repository ID to UUID format if needed
+  const getRepositoryUUID = (id: number | string): string => {
+    // If it's already a UUID, return it
+    if (typeof id === 'string' && id.includes('-')) {
+      return id;
+    }
+    
+    // Otherwise, generate a deterministic UUID from the numeric ID
+    // This uses a simple approach to create a v5 UUID-like string
+    const idStr = String(id);
+    return `00000000-0000-5000-a000-${idStr.padStart(12, '0')}`;
+  };
+
   // Fetch notes from Supabase (guarded by userId)
   const fetchNotes = async () => {
     if (!userId || !selectedRepository) {
@@ -137,7 +150,8 @@ export const NoteProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setError(null);
     
     try {
-      console.log('Fetching notes for repository:', selectedRepository.id);
+      const repoUUID = getRepositoryUUID(selectedRepository.id);
+      console.log('Fetching notes for repository:', selectedRepository.id, 'UUID:', repoUUID);
       
       // Get current session to ensure we have fresh auth
       const { data: { session } } = await supabase.auth.getSession();
@@ -151,7 +165,7 @@ export const NoteProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const { data, error } = await supabase
         .from('notes')
         .select('*')
-        .eq('repository_id', selectedRepository.id);
+        .eq('repository_id', repoUUID);
         
       if (error) {
         console.error('Error fetching notes:', error);
@@ -180,7 +194,8 @@ export const NoteProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setError(null);
     
     try {
-      console.log('Fetching folders for repository:', selectedRepository.id);
+      const repoUUID = getRepositoryUUID(selectedRepository.id);
+      console.log('Fetching folders for repository:', selectedRepository.id, 'UUID:', repoUUID);
       
       // Get current session to ensure we have fresh auth
       const { data: { session } } = await supabase.auth.getSession();
@@ -194,7 +209,7 @@ export const NoteProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const { data, error } = await supabase
         .from('folders')
         .select('*')
-        .eq('repository_id', selectedRepository.id);
+        .eq('repository_id', repoUUID);
         
       if (error) {
         console.error('Error fetching folders:', error);
@@ -219,17 +234,22 @@ export const NoteProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [userId, selectedRepository]);
 
-  // Create a note in Supabase
+  // Create a new note in Supabase
   const createNote = async (title: string, content: string): Promise<Note | null> => {
-    if (!selectedRepository || !userId) return null;
+    if (!userId || !selectedRepository) return null;
+    
     setLoading(true);
     setError(null);
+    
     try {
+      const repoUUID = getRepositoryUUID(selectedRepository.id);
+      console.log('Creating note for repository:', selectedRepository.id, 'UUID:', repoUUID);
+      
       const { data, error } = await supabase
         .from('notes')
         .insert([
           {
-            repository_id: selectedRepository.id,
+            repository_id: repoUUID,
             title,
             content,
             last_modified: new Date().toISOString(),
@@ -284,17 +304,22 @@ export const NoteProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // Create a folder in Supabase
+  // Create a new folder in Supabase
   const createFolder = async (name: string): Promise<Folder | null> => {
-    if (!selectedRepository || !userId) return null;
+    if (!userId || !selectedRepository) return null;
+    
     setLoading(true);
     setError(null);
+    
     try {
+      const repoUUID = getRepositoryUUID(selectedRepository.id);
+      console.log('Creating folder for repository:', selectedRepository.id, 'UUID:', repoUUID);
+      
       const { data, error } = await supabase
         .from('folders')
         .insert([
           {
-            repository_id: selectedRepository.id,
+            repository_id: repoUUID,
             name,
             last_modified: new Date().toISOString(),
           }
