@@ -2,7 +2,6 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useAuth } from './AuthContext';
 import { useRepository } from './RepositoryContext';
 import { Note, NoteFile, SyncStatus, Folder } from '../types';
-import { supabase } from '../supabaseClient';
 
 interface NoteContextType {
   notes: Note[];
@@ -33,35 +32,9 @@ export const NoteProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('synced');
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-  const [userId, setUserId] = useState<string | null>(null);
 
   useEffect(() => {
-    // Listen for auth changes to update userId
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      console.log('NoteContext auth event:', event);
-      if (session?.user) {
-        console.log('Setting userId from session:', session.user.id);
-        setUserId(session.user.id);
-      } else {
-        setUserId(null);
-      }
-    });
-
-    // Also get current user on initial load
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) {
-        console.log('Setting userId from initial session:', session.user.id);
-        setUserId(session.user.id);
-      }
-    });
-
-    return () => {
-      subscription.unsubscribe();
-    };
-  }, []);
-
-  // Load notes and folders from localStorage on start
-  useEffect(() => {
+    // Load notes and folders from localStorage on start
     const storedNotes = localStorage.getItem('commitpad_notes');
     if (storedNotes) {
       try {
@@ -126,233 +99,270 @@ export const NoteProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [currentNote]);
 
-  // Helper function to convert repository ID to UUID format if needed
-  const getRepositoryUUID = (id: number | string): string => {
-    // If it's already a UUID, return it
-    if (typeof id === 'string' && id.includes('-')) {
-      return id;
-    }
-    
-    // Otherwise, generate a deterministic UUID from the numeric ID
-    // This uses a simple approach to create a v5 UUID-like string
-    const idStr = String(id);
-    return `00000000-0000-5000-a000-${idStr.padStart(12, '0')}`;
+  // Helper: Encode content to base64 for GitHub API
+  const encodeBase64 = (str: string) => {
+    if (typeof window !== 'undefined' && window.btoa) return window.btoa(str);
+    return Buffer.from(str, 'utf-8').toString('base64');
   };
 
-  // Fetch notes from Supabase (guarded by userId)
+  // Fetch notes from GitHub repo
   const fetchNotes = async () => {
-    if (!userId || !selectedRepository) {
-      console.log('Skipping fetchNotes - missing userId or selectedRepository', { userId, selectedRepository });
+    if (!authState.isAuthenticated || !selectedRepository) {
+      setNotes([]);
       return;
     }
-    
     setLoading(true);
     setError(null);
-    
     try {
-      const repoUUID = getRepositoryUUID(selectedRepository.id);
-      console.log('Fetching notes for repository:', selectedRepository.id, 'UUID:', repoUUID);
-      
-      // Get current session to ensure we have fresh auth
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (!session) {
-        console.error('No active session found when fetching notes');
-        throw new Error('Authentication required');
-      }
-      
-      // First check if we have any notes for this repository
-      const { data, error } = await supabase
-        .from('notes')
-        .select('*')
-        .eq('repository_id', repoUUID);
-        
-      if (error) {
-        console.error('Error fetching notes:', error);
-        throw error;
-      }
-      
-      console.log('Notes fetched successfully:', data?.length || 0);
-      setNotes(data || []);
+      const octokit = getOctokit();
+      if (!octokit) throw new Error('Not authenticated');
+      // Get repo content (root)
+      const { data: repoContent } = await octokit.repos.getContent({
+        owner: selectedRepository.owner.login,
+        repo: selectedRepository.name,
+        path: '',
+      });
+      // Filter for markdown files
+      const noteFiles = Array.isArray(repoContent)
+        ? repoContent.filter(item => item.type === 'file' && (item.name.startsWith('note_') || item.name.endsWith('.md')))
+        : [];
+      // Fetch each note file's content
+      const notesData = await Promise.all(
+        noteFiles.map(async file => {
+          try {
+            const { data } = await octokit.repos.getContent({
+              owner: selectedRepository.owner.login,
+              repo: selectedRepository.name,
+              path: file.path,
+            });
+            const content = (data as any).content ? atob((data as any).content.replace(/\s/g, '')) : '';
+            const title = content.split('\n')[0].replace(/^#\s+/, '') || file.name.replace(/\.md$/, '').replace('note_', '');
+            return {
+              id: file.sha,
+              title,
+              content,
+              path: file.path,
+              lastModified: file.sha, // GitHub doesn't provide lastModified easily
+              synced: true,
+            } as Note;
+          } catch {
+            return null;
+          }
+        })
+      );
+      setNotes(notesData.filter(Boolean) as Note[]);
       setSyncStatus(navigator.onLine ? 'synced' : 'offline');
     } catch (error) {
-      console.error('Failed to fetch notes:', error);
-      setError('Failed to fetch notes from Supabase');
+      setError('Failed to fetch notes from GitHub');
+      setNotes([]);
     } finally {
       setLoading(false);
     }
   };
 
-  // Fetch folders from Supabase (guarded by userId)
-  const fetchFolders = async () => {
-    if (!userId || !selectedRepository) {
-      console.log('Skipping fetchFolders - missing userId or selectedRepository', { userId, selectedRepository });
-      return;
-    }
-    
+  // Create a new note in GitHub repo
+  const createNote = async (title: string, content: string): Promise<Note | null> => {
+    if (!authState.isAuthenticated || !selectedRepository) return null;
     setLoading(true);
     setError(null);
-    
     try {
-      const repoUUID = getRepositoryUUID(selectedRepository.id);
-      console.log('Fetching folders for repository:', selectedRepository.id, 'UUID:', repoUUID);
-      
-      // Get current session to ensure we have fresh auth
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (!session) {
-        console.error('No active session found when fetching folders');
-        throw new Error('Authentication required');
-      }
-      
-      // First check if we have any folders for this repository
-      const { data, error } = await supabase
-        .from('folders')
-        .select('*')
-        .eq('repository_id', repoUUID);
-        
-      if (error) {
-        console.error('Error fetching folders:', error);
-        throw error;
-      }
-      
-      console.log('Folders fetched successfully:', data?.length || 0);
-      setFolders(data || []);
+      const octokit = getOctokit();
+      if (!octokit) throw new Error('Not authenticated');
+      const filename = `note_${Date.now()}.md`;
+      const fullContent = `# ${title}\n${content}`;
+      await octokit.repos.createOrUpdateFileContents({
+        owner: selectedRepository.owner.login,
+        repo: selectedRepository.name,
+        path: filename,
+        message: `Create note: ${title}`,
+        content: encodeBase64(fullContent),
+      });
+      await fetchNotes();
+      return notes.find(n => n.title === title) || null;
     } catch (error) {
-      console.error('Failed to fetch folders:', error);
-      setError('Failed to fetch folders from Supabase');
+      setError('Failed to create note in GitHub');
+      return null;
     } finally {
       setLoading(false);
     }
   };
 
-  // Only call fetchNotes/fetchFolders when userId and selectedRepository are set
+  // Update a note in GitHub repo
+  const updateNote = async (id: string, content: string): Promise<void> => {
+    if (!authState.isAuthenticated || !selectedRepository) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const octokit = getOctokit();
+      if (!octokit) throw new Error('Not authenticated');
+      const note = notes.find(n => n.id === id);
+      if (!note) throw new Error('Note not found');
+      // Get file SHA
+      const { data } = await octokit.repos.getContent({
+        owner: selectedRepository.owner.login,
+        repo: selectedRepository.name,
+        path: note.path,
+      });
+      const sha = (data as any).sha;
+      const fullContent = `# ${note.title}\n${content}`;
+      await octokit.repos.createOrUpdateFileContents({
+        owner: selectedRepository.owner.login,
+        repo: selectedRepository.name,
+        path: note.path,
+        message: `Update note: ${note.title}`,
+        content: encodeBase64(fullContent),
+        sha,
+      });
+      await fetchNotes();
+    } catch (error) {
+      setError('Failed to update note in GitHub');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Delete a note in GitHub repo
+  const deleteNote = async (id: string): Promise<void> => {
+    if (!authState.isAuthenticated || !selectedRepository) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const octokit = getOctokit();
+      if (!octokit) throw new Error('Not authenticated');
+      const note = notes.find(n => n.id === id);
+      if (!note) throw new Error('Note not found');
+      // Get file SHA
+      const { data } = await octokit.repos.getContent({
+        owner: selectedRepository.owner.login,
+        repo: selectedRepository.name,
+        path: note.path,
+      });
+      const sha = (data as any).sha;
+      await octokit.repos.deleteFile({
+        owner: selectedRepository.owner.login,
+        repo: selectedRepository.name,
+        path: note.path,
+        message: `Delete note: ${note.title}`,
+        sha,
+      });
+      await fetchNotes();
+    } catch (error) {
+      setError('Failed to delete note in GitHub');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Fetch folders from GitHub repo (directories)
+  const fetchFolders = async () => {
+    if (!authState.isAuthenticated || !selectedRepository) {
+      setFolders([]);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const octokit = getOctokit();
+      if (!octokit) throw new Error('Not authenticated');
+      const { data: repoContent } = await octokit.repos.getContent({
+        owner: selectedRepository.owner.login,
+        repo: selectedRepository.name,
+        path: '',
+      });
+      const folderDirs = Array.isArray(repoContent)
+        ? repoContent.filter(item => item.type === 'dir')
+        : [];
+      setFolders(folderDirs.map(dir => ({
+        id: dir.sha,
+        name: dir.name,
+        path: dir.path,
+        lastModified: dir.sha,
+      })) as Folder[]);
+    } catch (error) {
+      setError('Failed to fetch folders from GitHub');
+      setFolders([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Create a new folder in GitHub repo
+  const createFolder = async (name: string): Promise<Folder | null> => {
+    if (!authState.isAuthenticated || !selectedRepository) return null;
+    setLoading(true);
+    setError(null);
+    try {
+      const octokit = getOctokit();
+      if (!octokit) throw new Error('Not authenticated');
+      // GitHub doesn't have a direct API to create folders; create a .gitkeep file
+      const folderPath = `${name}/.gitkeep`;
+      await octokit.repos.createOrUpdateFileContents({
+        owner: selectedRepository.owner.login,
+        repo: selectedRepository.name,
+        path: folderPath,
+        message: `Create folder: ${name}`,
+        content: encodeBase64(''),
+      });
+      await fetchFolders();
+      return folders.find(f => f.name === name) || null;
+    } catch (error) {
+      setError('Failed to create folder in GitHub');
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Delete a folder in GitHub repo (delete all files in it)
+  const deleteFolder = async (id: string): Promise<void> => {
+    if (!authState.isAuthenticated || !selectedRepository) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const octokit = getOctokit();
+      if (!octokit) throw new Error('Not authenticated');
+      const folder = folders.find(f => f.id === id);
+      if (!folder) throw new Error('Folder not found');
+      // List files in folder
+      const { data: folderContent } = await octokit.repos.getContent({
+        owner: selectedRepository.owner.login,
+        repo: selectedRepository.name,
+        path: folder.path,
+      });
+      const files = Array.isArray(folderContent) ? folderContent : [];
+      // Delete each file
+      for (const file of files) {
+        if (file.type === 'file') {
+          const { data } = await octokit.repos.getContent({
+            owner: selectedRepository.owner.login,
+            repo: selectedRepository.name,
+            path: file.path,
+          });
+          const sha = (data as any).sha;
+          await octokit.repos.deleteFile({
+            owner: selectedRepository.owner.login,
+            repo: selectedRepository.name,
+            path: file.path,
+            message: `Delete file in folder: ${folder.name}`,
+            sha,
+          });
+        }
+      }
+      await fetchFolders();
+    } catch (error) {
+      setError('Failed to delete folder in GitHub');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Only call fetchNotes/fetchFolders when authState and selectedRepository are set
   useEffect(() => {
-    if (userId && selectedRepository) {
+    if (authState.isAuthenticated && selectedRepository) {
       fetchNotes();
       fetchFolders();
     }
-  }, [userId, selectedRepository]);
-
-  // Create a new note in Supabase
-  const createNote = async (title: string, content: string): Promise<Note | null> => {
-    if (!userId || !selectedRepository) return null;
-    
-    setLoading(true);
-    setError(null);
-    
-    try {
-      const repoUUID = getRepositoryUUID(selectedRepository.id);
-      console.log('Creating note for repository:', selectedRepository.id, 'UUID:', repoUUID);
-      
-      const { data, error } = await supabase
-        .from('notes')
-        .insert([
-          {
-            repository_id: repoUUID,
-            title,
-            content,
-            last_modified: new Date().toISOString(),
-            synced: false
-          }
-        ])
-        .single();
-      if (error) throw error;
-      await fetchNotes();
-      return data;
-    } catch (error) {
-      setError('Failed to create note in Supabase');
-      return null;
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Update a note in Supabase
-  const updateNote = async (id: string, content: string): Promise<void> => {
-    setLoading(true);
-    setError(null);
-    try {
-      const { error } = await supabase
-        .from('notes')
-        .update({ content, last_modified: new Date().toISOString(), synced: false })
-        .eq('id', id);
-      if (error) throw error;
-      await fetchNotes();
-    } catch (error) {
-      setError('Failed to update note in Supabase');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Delete a note in Supabase
-  const deleteNote = async (id: string): Promise<void> => {
-    setLoading(true);
-    setError(null);
-    try {
-      const { error } = await supabase
-        .from('notes')
-        .delete()
-        .eq('id', id);
-      if (error) throw error;
-      await fetchNotes();
-    } catch (error) {
-      setError('Failed to delete note in Supabase');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Create a new folder in Supabase
-  const createFolder = async (name: string): Promise<Folder | null> => {
-    if (!userId || !selectedRepository) return null;
-    
-    setLoading(true);
-    setError(null);
-    
-    try {
-      const repoUUID = getRepositoryUUID(selectedRepository.id);
-      console.log('Creating folder for repository:', selectedRepository.id, 'UUID:', repoUUID);
-      
-      const { data, error } = await supabase
-        .from('folders')
-        .insert([
-          {
-            repository_id: repoUUID,
-            name,
-            last_modified: new Date().toISOString(),
-          }
-        ])
-        .single();
-      if (error) throw error;
-      await fetchFolders();
-      return data;
-    } catch (error) {
-      setError('Failed to create folder in Supabase');
-      return null;
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Delete a folder in Supabase
-  const deleteFolder = async (id: string): Promise<void> => {
-    setLoading(true);
-    setError(null);
-    try {
-      const { error } = await supabase
-        .from('folders')
-        .delete()
-        .eq('id', id);
-      if (error) throw error;
-      await fetchFolders();
-    } catch (error) {
-      setError('Failed to delete folder in Supabase');
-    } finally {
-      setLoading(false);
-    }
-  };
+  }, [authState.isAuthenticated, selectedRepository]);
 
   // Sync notes with GitHub
   const syncNotes = async (): Promise<void> => {

@@ -12,26 +12,93 @@ interface SelectRepoModalProps {
 const SelectRepoModal: React.FC<SelectRepoModalProps> = ({ isOpen, onClose, onCreateRepo }) => {
   const { repositories, loading, error, fetchRepositories, selectRepository } = useRepository();
   const [searchTerm, setSearchTerm] = useState('');
-  
+
   useEffect(() => {
-    console.log('SelectRepoModal useEffect triggered. isOpen:', isOpen);
     if (isOpen) {
       fetchRepositories();
     }
   }, [isOpen, fetchRepositories]);
-  
+
   if (!isOpen) return null;
 
-  const filteredRepos = repositories.filter((repo: Repository) =>
-    repo.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    repo.full_name.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  let content;
+  if (loading) {
+    content = (
+      <div className="p-6 text-center">
+        <svg className="animate-spin mx-auto h-6 w-6 text-gray-500 dark:text-gray-400" fill="none" viewBox="0 0 24 24">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg>
+        <p className="mt-2 text-gray-500 dark:text-gray-400">Loading repositories...</p>
+      </div>
+    );
+  } else if (error) {
+    content = (
+      <div className="p-6 text-center text-red-500 dark:text-red-400">
+        <p>{error}</p>
+        <button
+          onClick={fetchRepositories}
+          className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-medium"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  } else if (repositories.length === 0) {
+    content = (
+      <div className="p-6 text-center text-gray-500 dark:text-gray-400">
+        <p>No repositories found.</p>
+        <button
+          onClick={onCreateRepo}
+          className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-medium"
+        >
+          Create New Repository
+        </button>
+      </div>
+    );
+  } else {
+    const filteredRepos = repositories.filter((repo: Repository) =>
+      repo.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      repo.full_name.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+    content = filteredRepos.length === 0 ? (
+      <div className="p-6 text-center text-gray-500 dark:text-gray-400">
+        <p>No repositories match your search.</p>
+      </div>
+    ) : (
+      <ul className="divide-y divide-gray-200 dark:divide-slate-700">
+        {filteredRepos.map(repo => (
+          <li
+            key={repo.id}
+            className="p-4 hover:bg-gray-50 dark:hover:bg-slate-700 cursor-pointer"
+            onClick={() => selectRepository(repo)}
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="font-medium text-slate-800 dark:text-slate-200">{repo.name}</h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400">{repo.full_name}</p>
+              </div>
+              <span 
+                className={`text-xs px-2 py-1 rounded-full ${
+                  repo.private 
+                    ? 'bg-gray-100 dark:bg-slate-700 text-gray-800 dark:text-gray-300' 
+                    : 'bg-green-100 dark:bg-green-900/20 text-green-800 dark:text-green-400'
+                }`}
+              >
+                {repo.private ? 'Private' : 'Public'}
+              </span>
+            </div>
+          </li>
+        ))}
+      </ul>
+    );
+  }
 
   const handleSelectRepo = (repo: Repository) => {
     selectRepository(repo);
     onClose();
   };
-  
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
       <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl w-full max-w-xl max-h-[80vh]">
@@ -44,7 +111,6 @@ const SelectRepoModal: React.FC<SelectRepoModalProps> = ({ isOpen, onClose, onCr
             <X className="h-5 w-5" />
           </button>
         </div>
-        
         <div className="p-4 border-b border-gray-200 dark:border-slate-700">
           <div className="relative">
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -59,53 +125,9 @@ const SelectRepoModal: React.FC<SelectRepoModalProps> = ({ isOpen, onClose, onCr
             />
           </div>
         </div>
-        
         <div className="overflow-y-auto max-h-[40vh]">
-          {loading ? (
-            <div className="p-6 text-center">
-              <svg className="animate-spin mx-auto h-6 w-6 text-gray-500 dark:text-gray-400" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-              </svg>
-              <p className="mt-2 text-gray-500 dark:text-gray-400">Loading repositories...</p>
-            </div>
-          ) : error ? (
-            <div className="p-6 text-center text-red-500 dark:text-red-400">
-              <p>{error}</p>
-            </div>
-          ) : filteredRepos.length === 0 ? (
-            <div className="p-6 text-center text-gray-500 dark:text-gray-400">
-              <p>No repositories found</p>
-            </div>
-          ) : (
-            <ul className="divide-y divide-gray-200 dark:divide-slate-700">
-              {filteredRepos.map(repo => (
-                <li
-                  key={repo.id}
-                  className="p-4 hover:bg-gray-50 dark:hover:bg-slate-700 cursor-pointer"
-                  onClick={() => handleSelectRepo(repo)}
-                >
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="font-medium text-slate-800 dark:text-slate-200">{repo.name}</h3>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">{repo.full_name}</p>
-                    </div>
-                    <span 
-                      className={`text-xs px-2 py-1 rounded-full ${
-                        repo.private 
-                          ? 'bg-gray-100 dark:bg-slate-700 text-gray-800 dark:text-gray-300' 
-                          : 'bg-green-100 dark:bg-green-900/20 text-green-800 dark:text-green-400'
-                      }`}
-                    >
-                      {repo.private ? 'Private' : 'Public'}
-                    </span>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
+          {content}
         </div>
-        
         <div className="p-4 border-t border-gray-200 dark:border-slate-700">
           <button
             onClick={onCreateRepo}
