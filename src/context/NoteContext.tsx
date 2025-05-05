@@ -36,9 +36,28 @@ export const NoteProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [userId, setUserId] = useState<string | null>(null);
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      setUserId(data?.user?.id ?? null);
+    // Listen for auth changes to update userId
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log('NoteContext auth event:', event);
+      if (session?.user) {
+        console.log('Setting userId from session:', session.user.id);
+        setUserId(session.user.id);
+      } else {
+        setUserId(null);
+      }
     });
+
+    // Also get current user on initial load
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        console.log('Setting userId from initial session:', session.user.id);
+        setUserId(session.user.id);
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
 
   // Load notes and folders from localStorage on start
@@ -297,6 +316,7 @@ export const NoteProvider: React.FC<{ children: React.ReactNode }> = ({ children
               name: item.name,
               path: item.path,
               sha: item.sha,
+              type: 'file'
             }))
         : [];
 
