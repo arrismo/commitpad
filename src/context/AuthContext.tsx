@@ -61,93 +61,72 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setAuthState(prev => ({ ...prev, loading: false }));
     }
 
-    // Check for auth callback
-    const urlParams = new URLSearchParams(window.location.search);
-    const code = urlParams.get('code');
+    // Check for Supabase auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        console.log('Supabase auth event:', event);
+        
+        if (event === 'SIGNED_IN' && session) {
+          console.log('User signed in via Supabase');
+          
+          // Get user info from session
+          const user: User = {
+            id: Number(session.user.id),
+            login: session.user.user_metadata.user_name || session.user.email || '',
+            name: session.user.user_metadata.full_name || '',
+            avatar_url: session.user.user_metadata.avatar_url || '',
+          };
+          
+          // Get GitHub token from session
+          const token = session.provider_token;
+          
+          if (!token) {
+            console.error('No GitHub token found in session');
+            setAuthState({
+              isAuthenticated: false,
+              user: null,
+              token: null,
+              loading: false,
+              error: 'Failed to get GitHub token',
+            });
+            return;
+          }
+          
+          // Update auth state
+          const newAuthState = {
+            isAuthenticated: true,
+            user,
+            token,
+            loading: false,
+            error: null,
+          };
+          
+          setAuthState(newAuthState);
+          localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(newAuthState));
+          
+          // Redirect to app if on login page
+          if (window.location.pathname.includes('/auth')) {
+            navigate('/');
+          }
+        } else if (event === 'SIGNED_OUT') {
+          console.log('User signed out via Supabase');
+          localStorage.removeItem(AUTH_STORAGE_KEY);
+          setAuthState({
+            isAuthenticated: false,
+            user: null,
+            token: null,
+            loading: false,
+            error: null,
+          });
+        }
+      }
+    );
     
-    if (code && window.location.pathname === '/auth/callback') {
-      handleAuthCallback(code);
-    }
-  }, []);
-
-  const handleAuthCallback = async (code: string) => {
-    setAuthState(prev => ({ ...prev, loading: true, error: null }));
-    console.log('Handling auth callback with code:', code.substring(0, 5) + '...');
-    
-    try {
-      // Exchange code for token using our Netlify function
-      console.log('Calling Netlify function for token exchange');
-      const tokenResponse = await fetch('/.netlify/functions/github-auth', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          code,
-        }),
-      });
-
-      console.log('Token response status:', tokenResponse.status);
-      
-      if (!tokenResponse.ok) {
-        const errorText = await tokenResponse.text();
-        console.error('Token response error:', errorText);
-        throw new Error(`Failed to exchange code for token: ${tokenResponse.status} ${errorText}`);
-      }
-
-      const tokenData = await tokenResponse.json();
-      console.log('Received token data:', tokenData.error ? 'Error' : 'Success');
-      
-      if (tokenData.error) {
-        throw new Error(tokenData.error_description || 'Failed to get access token');
-      }
-
-      const token = tokenData.access_token;
-      
-      if (!token) {
-        throw new Error('No access token received');
-      }
-
-      console.log('Successfully received access token');
-
-      // Create an Octokit instance with the token
-      const octokit = new Octokit({ auth: token });
-      
-      // Get the authenticated user
-      const { data: userData } = await octokit.users.getAuthenticated();
-
-      const user: User = {
-        id: userData.id,
-        login: userData.login,
-        name: userData.name || userData.login,
-        avatar_url: userData.avatar_url,
-      };
-
-      // Update auth state
-      const newAuthState = {
-        isAuthenticated: true,
-        user,
-        token,
-        loading: false,
-        error: null,
-      };
-
-      setAuthState(newAuthState);
-      localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(newAuthState));
-
-      // Redirect to app
-      navigate('/');
-    } catch (error) {
-      console.error('Authentication error:', error);
-      setAuthState({
-        isAuthenticated: false,
-        user: null,
-        token: null,
-        loading: false,
-        error: error instanceof Error ? error.message : 'Failed to authenticate with GitHub',
-      });
-    }
-  };
+    // Cleanup subscription
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [navigate]);
 
   const login = useCallback(() => {
     // Use Supabase's signInWithOAuth with only redirectTo
@@ -155,6 +134,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       provider: 'github',
       options: {
         redirectTo: window.location.origin + '/auth/callback',
+        scopes: 'repo user',
       },
     });
   }, []);
