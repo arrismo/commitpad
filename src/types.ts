@@ -5,6 +5,7 @@ export interface Note {
   path: string;
   lastModified: string;
   synced: boolean;
+  folder?: string; // Added folder property for organization
   // Supabase specific fields
   user_id?: string;
   repository_id?: string;
