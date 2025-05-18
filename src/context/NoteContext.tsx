@@ -92,6 +92,8 @@ export const NoteProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const octokit = getOctokit();
       if (!octokit) throw new Error('Not authenticated');
       
+      console.log('Fetching notes from repository...');
+      
       // Recursive function to get all files in a repository, including those in folders
       const getAllFiles = async (path: string = ''): Promise<any[]> => {
         try {
@@ -105,17 +107,27 @@ export const NoteProvider: React.FC<{ children: React.ReactNode }> = ({ children
             return [];
           }
           
+          console.log(`Found ${content.length} items in path: ${path}`);
+          
           // Process files and folders
           const results = await Promise.all(
             content.map(async item => {
               if (item.type === 'dir') {
+                console.log(`Found directory: ${item.path}`);
                 // Recursively get files from directories
                 const nestedFiles = await getAllFiles(item.path);
                 return nestedFiles;
-              } else if (item.type === 'file' && 
-                       (item.name.startsWith('note_') || item.name.endsWith('.md'))) {
-                // Only include note files
-                return [item];
+              } else if (item.type === 'file') {
+                // Include all markdown files and files that look like notes
+                const isMarkdown = item.name.endsWith('.md') || item.name.endsWith('.markdown');
+                const isNoteLike = item.name.match(/^[a-zA-Z0-9\s\-_\(\)\[\]]+(\.(md|markdown))?$/i);
+                
+                if (isMarkdown || isNoteLike || item.name.startsWith('note_')) {
+                  console.log(`Including file: ${item.path} (isMarkdown: ${isMarkdown}, isNoteLike: ${isNoteLike})`);
+                  return [item];
+                } else {
+                  console.log(`Skipping file (not a note): ${item.path}`);
+                }
               }
               return [];
             })
@@ -131,11 +143,17 @@ export const NoteProvider: React.FC<{ children: React.ReactNode }> = ({ children
       
       // Get all note files from the repository, including those in folders
       const allNoteFiles = await getAllFiles();
+      console.log(`Found ${allNoteFiles.length} potential note files`);
+      
+      if (allNoteFiles.length === 0) {
+        console.warn('No note files found in the repository');
+      }
       
       // Fetch each note file's content
       const notesData = await Promise.all(
         allNoteFiles.map(async file => {
           try {
+            console.log(`Fetching content for: ${file.path}`);
             const { data } = await octokit.repos.getContent({
               owner: selectedRepository.owner.login,
               repo: selectedRepository.name,
@@ -143,7 +161,7 @@ export const NoteProvider: React.FC<{ children: React.ReactNode }> = ({ children
             });
             
             const content = (data as any).content ? atob((data as any).content.replace(/\s/g, '')) : '';
-            const title = content.split('\n')[0].replace(/^#\s+/, '') || file.name.replace(/\.md$/, '').replace('note_', '');
+            const title = content.split('\n')[0].replace(/^#\s+/, '') || file.name.replace(/\.(md|markdown)$/i, '').replace(/^note_/i, '');
             
             // Extract folder name from path if it exists
             let folder: string | undefined = undefined;
@@ -152,15 +170,18 @@ export const NoteProvider: React.FC<{ children: React.ReactNode }> = ({ children
               folder = pathParts[0];
             }
             
-            return {
+            const note = {
               id: file.sha,
-              title,
+              title: title || 'Untitled Note',
               content,
               path: file.path,
               folder,
               lastModified: new Date().toISOString(),
               synced: true,
             } as Note;
+            
+            console.log(`Processed note: ${note.title} (${file.path})`);
+            return note;
           } catch (error) {
             console.error(`Error fetching content for ${file.path}:`, error);
             return null;
@@ -168,7 +189,13 @@ export const NoteProvider: React.FC<{ children: React.ReactNode }> = ({ children
         })
       );
       
-      const validNotes = notesData.filter(Boolean) as Note[];
+      const validNotes = notesData.filter((note): note is Note => {
+        if (!note) return false;
+        // Ensure the note has required properties
+        return !!(note.id && note.title && note.content);
+      });
+      
+      console.log(`Successfully loaded ${validNotes.length} notes`);
       setNotes(validNotes);
       setSyncStatus(navigator.onLine ? 'synced' : 'offline');
     } catch (error) {
