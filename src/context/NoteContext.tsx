@@ -189,14 +189,33 @@ export const NoteProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setError(null);
     setSyncStatus('syncing');
     
+    // Create a temporary note ID that will be replaced after GitHub creates the note
+    const tempId = `temp-${Date.now()}`;
+    const noteTimestamp = Date.now();
+    
+    // Create a new note object for immediate UI update
+    const tempNote: Note = {
+      id: tempId,
+      title,
+      content,
+      path: folderName ? `${folderName}/note_${noteTimestamp}.md` : `note_${noteTimestamp}.md`,
+      folder: folderName,
+      lastModified: new Date().toISOString(),
+      synced: false
+    };
+    
+    // Update the local state immediately for a responsive UI
+    setNotes(prevNotes => [...prevNotes, tempNote]);
+    setCurrentNote(tempNote);
+    
+    // Return early if offline - the note will be synced when back online
+    if (!navigator.onLine) {
+      setError('Cannot sync note while offline. Your note will be synced when you are back online.');
+      setSyncStatus('offline');
+      return tempNote;
+    }
+    
     try {
-      // Check if we're online
-      if (!navigator.onLine) {
-        setError('Cannot create note while offline');
-        setSyncStatus('offline');
-        return null;
-      }
-      
       const octokit = getOctokit();
       if (!octokit) throw new Error('Not authenticated');
       
@@ -221,23 +240,25 @@ export const NoteProvider: React.FC<{ children: React.ReactNode }> = ({ children
       
       if (!sha) throw new Error('Failed to get SHA for created note');
       
-      // Create the note object
-      const newNote: Note = {
+      // Create the final note object with the GitHub response
+      const finalNote: Note = {
         id: sha,
         title,
         content,
         path: filename,
-        folder: folderName, // Add folder information
+        folder: folderName,
         lastModified: new Date().toISOString(),
         synced: true
       };
       
-      // Update local state immediately
-      setNotes(prev => [...prev, newNote]);
-      setCurrentNote(newNote);
+      // Update the local state with the final note, replacing the temporary one
+      setNotes(prevNotes => 
+        prevNotes.map(note => note.id === tempId ? finalNote : note)
+      );
+      setCurrentNote(finalNote);
       setSyncStatus('synced');
       
-      return newNote;
+      return finalNote;
     } catch (error) {
       console.error('Error creating note:', error);
       setError('Failed to create note');
