@@ -277,39 +277,33 @@ const Sidebar: React.FC<SidebarProps> = ({ openCreateRepo }) => {
                 </ul>
               </div>
             )}
-          </div>
-        )}
-      </div>
     </div>
-    {noteToDelete && (
-      <Modal
-        isOpen={true}
-        onClose={() => setNoteToDelete(null)}
-      >
-        <Modal.Header>
-          Delete Note
-        </Modal.Header>
-        <Modal.Body>
-          Are you sure you want to delete the note "{noteToDelete.title}"?
-        </Modal.Body>
-        <Modal.Footer>
+  </div>
+  {noteToDelete && (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
+      <div className="bg-white dark:bg-slate-800 rounded-lg shadow-lg p-6 w-80">
+        <h3 className="text-lg font-medium text-slate-800 dark:text-slate-200 mb-3">Delete Note?</h3>
+        <p className="text-sm text-slate-600 dark:text-slate-400 mb-6">
+          Are you sure you want to delete <span className="font-semibold">{noteToDelete.title}</span>? This action cannot be undone.
+        </p>
+        <div className="flex justify-end gap-2">
           <button
-            onClick={handleDeleteNote}
-            className="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded"
-          >
-            Delete
-          </button>
-          <button
-            onClick={handleCancelDeletion}
-            className="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded"
+            className="px-4 py-2 rounded bg-gray-200 dark:bg-slate-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-slate-600"
+            onClick={() => setNoteToDelete(null)}
           >
             Cancel
           </button>
-        </Modal.Footer>
-      </Modal>
-    )}
-  );
-};
+          <button
+            className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700"
+            onClick={handleDeleteNote}
+          >
+            Delete
+          </button>
+        </div>
+      </div>
+    </div>
+  )}
+);
 
 // Folder component
 interface FolderItemProps {
