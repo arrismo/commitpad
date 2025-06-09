@@ -28,14 +28,28 @@ const Editor: React.FC = () => {
     }
   }, [selectedRepository, fetchNotes]);
   
-  // If no repository is selected, show the select repo modal
+  // Track if we've already shown the repo selection modal
+  const [initialSelectionDone, setInitialSelectionDone] = useState(false);
+  
+  // If no repository is selected, show the select repo modal, but only on initial load
   useEffect(() => {
+    // Only show the select repo modal if:
+    // 1. User is authenticated
+    // 2. No repository is selected
+    // 3. We're not creating a new repo
+    // 4. We haven't already gone through initial selection
     if (authState.isAuthenticated && !selectedRepository && !isCreateRepoOpen) {
-      setIsSelectRepoOpen(true);
-    } else {
+      if (!initialSelectionDone) {
+        // First time showing the modal - this is intentional
+        setIsSelectRepoOpen(true);
+        setInitialSelectionDone(true);
+      }
+    } else if (selectedRepository) {
+      // If we have a repository, close the modal and mark selection as done
       setIsSelectRepoOpen(false);
+      setInitialSelectionDone(true);
     }
-  }, [authState.isAuthenticated, selectedRepository, isCreateRepoOpen]);
+  }, [authState.isAuthenticated, selectedRepository, isCreateRepoOpen, initialSelectionDone]);
   
   // Listen for the custom event to open the switch repo modal
   useEffect(() => {

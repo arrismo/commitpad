@@ -11,8 +11,8 @@ interface NoteContextType {
   loading: boolean;
   error: string | null;
   fetchNotes: () => Promise<void>;
-  createNote: (title: string, content: string) => Promise<Note | null>;
-  updateNote: (id: string, content: string) => Promise<void>;
+  createNote: (title: string, content: string, folderName?: string) => Promise<Note | null>;
+  updateNote: (id: string, content: string, folderName?: string) => Promise<void>;
   deleteNote: (id: string) => Promise<void>;
   setCurrentNote: (note: Note | null) => void;
   syncNotes: () => Promise<void>;
@@ -33,42 +33,15 @@ export const NoteProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Check if we're online and update sync status accordingly
   useEffect(() => {
-    // Load notes and folders from localStorage on start
-    const storedNotes = localStorage.getItem('commitpad_notes');
-    if (storedNotes) {
-      try {
-        setNotes(JSON.parse(storedNotes));
-      } catch (e) {
-        localStorage.removeItem('commitpad_notes');
-      }
-    }
-    
-    const storedFolders = localStorage.getItem('commitpad_folders');
-    if (storedFolders) {
-      try {
-        setFolders(JSON.parse(storedFolders));
-      } catch (e) {
-        localStorage.removeItem('commitpad_folders');
-      }
-    }
-    
-    const storedCurrentNote = localStorage.getItem('commitpad_current_note');
-    if (storedCurrentNote) {
-      try {
-        setCurrentNote(JSON.parse(storedCurrentNote));
-      } catch (e) {
-        localStorage.removeItem('commitpad_current_note');
-      }
-    }
-    
-    // Check if we're online
     const updateOnlineStatus = () => {
       setSyncStatus(navigator.onLine ? 'synced' : 'offline');
     };
     
     window.addEventListener('online', updateOnlineStatus);
     window.addEventListener('offline', updateOnlineStatus);
+    updateOnlineStatus();
     
     return () => {
       window.removeEventListener('online', updateOnlineStatus);
@@ -76,28 +49,29 @@ export const NoteProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, []);
 
-  // Update localStorage when notes change
-  useEffect(() => {
-    if (notes.length > 0) {
-      localStorage.setItem('commitpad_notes', JSON.stringify(notes));
-    }
-  }, [notes]);
-  
-  // Update localStorage when folders change
-  useEffect(() => {
-    if (folders.length > 0) {
-      localStorage.setItem('commitpad_folders', JSON.stringify(folders));
-    }
-  }, [folders]);
-  
-  // Update localStorage when current note changes
+  // Update current note in session storage for temporary persistence
+  // This is just for the current session and will be cleared when the browser is closed
   useEffect(() => {
     if (currentNote) {
-      localStorage.setItem('commitpad_current_note', JSON.stringify(currentNote));
+      sessionStorage.setItem('commitpad_current_note', JSON.stringify(currentNote));
     } else {
-      localStorage.removeItem('commitpad_current_note');
+      sessionStorage.removeItem('commitpad_current_note');
     }
   }, [currentNote]);
+  
+  // Load current note from session storage on initial load
+  useEffect(() => {
+    if (!currentNote) {
+      const storedNote = sessionStorage.getItem('commitpad_current_note');
+      if (storedNote) {
+        try {
+          setCurrentNote(JSON.parse(storedNote));
+        } catch (e) {
+          sessionStorage.removeItem('commitpad_current_note');
+        }
+      }
+    }
+  }, []);
 
   // Helper: Encode content to base64 for GitHub API
   const encodeBase64 = (str: string) => {
@@ -109,6 +83,7 @@ export const NoteProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const fetchNotes = async () => {
     if (!authState.isAuthenticated || !selectedRepository) {
       setNotes([]);
+      setCurrentNote(null);
       return;
     }
     setLoading(true);
@@ -116,43 +91,115 @@ export const NoteProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const octokit = getOctokit();
       if (!octokit) throw new Error('Not authenticated');
-      // Get repo content (root)
-      const { data: repoContent } = await octokit.repos.getContent({
-        owner: selectedRepository.owner.login,
-        repo: selectedRepository.name,
-        path: '',
-      });
-      // Filter for markdown files
-      const noteFiles = Array.isArray(repoContent)
-        ? repoContent.filter(item => item.type === 'file' && (item.name.startsWith('note_') || item.name.endsWith('.md')))
-        : [];
+      
+      console.log('Fetching notes from repository...');
+      
+      // Recursive function to get all files in a repository, including those in folders
+      const getAllFiles = async (path: string = ''): Promise<any[]> => {
+        try {
+          const { data: content } = await octokit.repos.getContent({
+            owner: selectedRepository.owner.login,
+            repo: selectedRepository.name,
+            path,
+          });
+          
+          if (!Array.isArray(content)) {
+            return [];
+          }
+          
+          console.log(`Found ${content.length} items in path: ${path}`);
+          
+          // Process files and folders
+          const results = await Promise.all(
+            content.map(async item => {
+              if (item.type === 'dir') {
+                console.log(`Found directory: ${item.path}`);
+                // Recursively get files from directories
+                const nestedFiles = await getAllFiles(item.path);
+                return nestedFiles;
+              } else if (item.type === 'file') {
+                // Include all markdown files and files that look like notes
+                const isMarkdown = item.name.endsWith('.md') || item.name.endsWith('.markdown');
+                const isNoteLike = item.name.match(/^[a-zA-Z0-9\s\-_\(\)\[\]]+(\.(md|markdown))?$/i);
+                
+                if (isMarkdown || isNoteLike || item.name.startsWith('note_')) {
+                  console.log(`Including file: ${item.path} (isMarkdown: ${isMarkdown}, isNoteLike: ${isNoteLike})`);
+                  return [item];
+                } else {
+                  console.log(`Skipping file (not a note): ${item.path}`);
+                }
+              }
+              return [];
+            })
+          );
+          
+          // Flatten the results array
+          return results.flat();
+        } catch (error) {
+          console.error(`Error fetching content from ${path}:`, error);
+          return [];
+        }
+      };
+      
+      // Get all note files from the repository, including those in folders
+      const allNoteFiles = await getAllFiles();
+      console.log(`Found ${allNoteFiles.length} potential note files`);
+      
+      if (allNoteFiles.length === 0) {
+        console.warn('No note files found in the repository');
+      }
+      
       // Fetch each note file's content
       const notesData = await Promise.all(
-        noteFiles.map(async file => {
+        allNoteFiles.map(async file => {
           try {
+            console.log(`Fetching content for: ${file.path}`);
             const { data } = await octokit.repos.getContent({
               owner: selectedRepository.owner.login,
               repo: selectedRepository.name,
               path: file.path,
             });
+            
             const content = (data as any).content ? atob((data as any).content.replace(/\s/g, '')) : '';
-            const title = content.split('\n')[0].replace(/^#\s+/, '') || file.name.replace(/\.md$/, '').replace('note_', '');
-            return {
+            const title = content.split('\n')[0].replace(/^#\s+/, '') || file.name.replace(/\.(md|markdown)$/i, '').replace(/^note_/i, '');
+            
+            // Extract folder name from path if it exists
+            let folder: string | undefined = undefined;
+            const pathParts = file.path.split('/');
+            if (pathParts.length > 1) {
+              folder = pathParts[0];
+            }
+            
+            const note = {
               id: file.sha,
-              title,
+              title: title || 'Untitled Note',
               content,
               path: file.path,
-              lastModified: file.sha, // GitHub doesn't provide lastModified easily
+              folder,
+              lastModified: new Date().toISOString(),
               synced: true,
             } as Note;
-          } catch {
+            
+            console.log(`Processed note: ${note.title} (${file.path})`);
+            return note;
+          } catch (error) {
+            console.error(`Error fetching content for ${file.path}:`, error);
             return null;
           }
         })
       );
-      setNotes(notesData.filter(Boolean) as Note[]);
+      
+      const validNotes = notesData.filter((note): note is Note => {
+        if (!note) return false;
+        // Ensure the note has required properties
+        return !!(note.id && note.title && note.content);
+      });
+      
+      console.log(`Successfully loaded ${validNotes.length} notes`);
+      setNotes(validNotes);
       setSyncStatus(navigator.onLine ? 'synced' : 'offline');
     } catch (error) {
+      console.error('Failed to fetch notes from GitHub:', error);
       setError('Failed to fetch notes from GitHub');
       setNotes([]);
     } finally {
@@ -160,27 +207,89 @@ export const NoteProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+
+  
   // Create a new note in GitHub repo
-  const createNote = async (title: string, content: string): Promise<Note | null> => {
+  const createNote = async (title: string, content: string, folderName?: string): Promise<Note | null> => {
     if (!authState.isAuthenticated || !selectedRepository) return null;
     setLoading(true);
     setError(null);
+    setSyncStatus('syncing');
+    
+    // Create a temporary note ID that will be replaced after GitHub creates the note
+    const tempId = `temp-${Date.now()}`;
+    const noteTimestamp = Date.now();
+    
+    // Create a new note object for immediate UI update
+    const tempNote: Note = {
+      id: tempId,
+      title,
+      content,
+      path: folderName ? `${folderName}/note_${noteTimestamp}.md` : `note_${noteTimestamp}.md`,
+      folder: folderName,
+      lastModified: new Date().toISOString(),
+      synced: false
+    };
+    
+    // Update the local state immediately for a responsive UI
+    setNotes(prevNotes => [...prevNotes, tempNote]);
+    setCurrentNote(tempNote);
+    
+    // Return early if offline - the note will be synced when back online
+    if (!navigator.onLine) {
+      setError('Cannot sync note while offline. Your note will be synced when you are back online.');
+      setSyncStatus('offline');
+      return tempNote;
+    }
+    
     try {
       const octokit = getOctokit();
       if (!octokit) throw new Error('Not authenticated');
-      const filename = `note_${Date.now()}.md`;
+      
+      // If folder is specified, create note in that folder
+      const timestamp = Date.now();
+      const filename = folderName 
+        ? `${folderName}/note_${timestamp}.md` 
+        : `note_${timestamp}.md`;
+      
       const fullContent = `# ${title}\n${content}`;
-      await octokit.repos.createOrUpdateFileContents({
+      
+      const response = await octokit.repos.createOrUpdateFileContents({
         owner: selectedRepository.owner.login,
         repo: selectedRepository.name,
         path: filename,
         message: `Create note: ${title}`,
         content: encodeBase64(fullContent),
       });
-      await fetchNotes();
-      return notes.find(n => n.title === title) || null;
+      
+      // Get the SHA of the created file
+      const sha = response.data.content?.sha;
+      
+      if (!sha) throw new Error('Failed to get SHA for created note');
+      
+      // Create the final note object with the GitHub response
+      const finalNote: Note = {
+        id: sha,
+        title,
+        content,
+        path: filename,
+        folder: folderName,
+        lastModified: new Date().toISOString(),
+        synced: true
+      };
+      
+      // Update the local state with the final note, replacing the temporary one
+      setNotes(prevNotes => 
+        prevNotes.map(note => note.id === tempId ? finalNote : note)
+      );
+      setCurrentNote(finalNote);
+      setSyncStatus('synced');
+      
+      return finalNote;
     } catch (error) {
-      setError('Failed to create note in GitHub');
+      console.error('Error creating note:', error);
+      setError('Failed to create note');
+      setSyncStatus('offline');
       return null;
     } finally {
       setLoading(false);
@@ -188,34 +297,96 @@ export const NoteProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   // Update a note in GitHub repo
-  const updateNote = async (id: string, content: string): Promise<void> => {
+  const updateNote = async (id: string, content: string, folderName?: string): Promise<void> => {
     if (!authState.isAuthenticated || !selectedRepository) return;
     setLoading(true);
     setError(null);
+    setSyncStatus('syncing');
+    
     try {
-      const octokit = getOctokit();
-      if (!octokit) throw new Error('Not authenticated');
       const note = notes.find(n => n.id === id);
       if (!note) throw new Error('Note not found');
+      
+      // Update the note content
+      note.content = content;
+      note.lastModified = new Date().toISOString();
+      
+      // Update folder if specified
+      if (folderName !== undefined) {
+        note.folder = folderName;
+      }
+      
+      // Check if we're online
+      if (!navigator.onLine) {
+        setError('Cannot update note while offline');
+        setSyncStatus('offline');
+        return;
+      }
+      
+      const octokit = getOctokit();
+      if (!octokit) throw new Error('Not authenticated');
+      
       // Get file SHA
       const { data } = await octokit.repos.getContent({
         owner: selectedRepository.owner.login,
         repo: selectedRepository.name,
         path: note.path,
       });
+      
       const sha = (data as any).sha;
       const fullContent = `# ${note.title}\n${content}`;
-      await octokit.repos.createOrUpdateFileContents({
-        owner: selectedRepository.owner.login,
-        repo: selectedRepository.name,
-        path: note.path,
-        message: `Update note: ${note.title}`,
-        content: encodeBase64(fullContent),
-        sha,
-      });
-      await fetchNotes();
+      
+      // If we're moving to a different folder, we need to delete the old file and create a new one
+      if (folderName !== undefined && note.folder !== folderName) {
+        // Delete the old file
+        await octokit.repos.deleteFile({
+          owner: selectedRepository.owner.login,
+          repo: selectedRepository.name,
+          path: note.path,
+          message: `Move note: ${note.title} to ${folderName || 'root'}`,
+          sha,
+        });
+        
+        // Create a new file in the target folder
+        const timestamp = Date.now();
+        const newPath = folderName 
+          ? `${folderName}/note_${timestamp}.md` 
+          : `note_${timestamp}.md`;
+          
+        const createResponse = await octokit.repos.createOrUpdateFileContents({
+          owner: selectedRepository.owner.login,
+          repo: selectedRepository.name,
+          path: newPath,
+          message: `Create note: ${note.title} in ${folderName || 'root'}`,
+          content: encodeBase64(fullContent),
+        });
+        
+        // Update note with new path and SHA
+        note.path = newPath;
+        note.id = createResponse.data.content?.sha || note.id;
+      } else {
+        // Just update the existing file
+        await octokit.repos.createOrUpdateFileContents({
+          owner: selectedRepository.owner.login,
+          repo: selectedRepository.name,
+          path: note.path,
+          message: `Update note: ${note.title}`,
+          content: encodeBase64(fullContent),
+          sha,
+        });
+      }
+      
+      // Update local state
+      setNotes(prev => prev.map(n => n.id === id ? note : n));
+      if (currentNote?.id === id) {
+        setCurrentNote(note);
+      }
+      
+      setSyncStatus('synced');
     } catch (error) {
-      setError('Failed to update note in GitHub');
+      console.error('Error updating note:', error);
+      setError('Failed to update note');
+      setSyncStatus('offline');
     } finally {
       setLoading(false);
     }
@@ -226,18 +397,31 @@ export const NoteProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!authState.isAuthenticated || !selectedRepository) return;
     setLoading(true);
     setError(null);
+    setSyncStatus('syncing');
+    
     try {
-      const octokit = getOctokit();
-      if (!octokit) throw new Error('Not authenticated');
       const note = notes.find(n => n.id === id);
       if (!note) throw new Error('Note not found');
+      
+      // Check if we're online
+      if (!navigator.onLine) {
+        setError('Cannot delete note while offline');
+        setSyncStatus('offline');
+        return;
+      }
+      
+      const octokit = getOctokit();
+      if (!octokit) throw new Error('Not authenticated');
+      
       // Get file SHA
       const { data } = await octokit.repos.getContent({
         owner: selectedRepository.owner.login,
         repo: selectedRepository.name,
         path: note.path,
       });
+      
       const sha = (data as any).sha;
+      
       await octokit.repos.deleteFile({
         owner: selectedRepository.owner.login,
         repo: selectedRepository.name,
@@ -245,9 +429,18 @@ export const NoteProvider: React.FC<{ children: React.ReactNode }> = ({ children
         message: `Delete note: ${note.title}`,
         sha,
       });
-      await fetchNotes();
+      
+      // Update local state
+      setNotes(prev => prev.filter(n => n.id !== id));
+      if (currentNote?.id === id) {
+        setCurrentNote(null);
+      }
+      
+      setSyncStatus('synced');
     } catch (error) {
-      setError('Failed to delete note in GitHub');
+      console.error('Error deleting note:', error);
+      setError('Failed to delete note');
+      setSyncStatus('offline');
     } finally {
       setLoading(false);
     }
@@ -264,20 +457,29 @@ export const NoteProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const octokit = getOctokit();
       if (!octokit) throw new Error('Not authenticated');
+      
+      // Get all directories from the root level
       const { data: repoContent } = await octokit.repos.getContent({
         owner: selectedRepository.owner.login,
         repo: selectedRepository.name,
         path: '',
       });
+      
       const folderDirs = Array.isArray(repoContent)
         ? repoContent.filter(item => item.type === 'dir')
         : [];
-      setFolders(folderDirs.map(dir => ({
+        
+      // Create folder objects with notes
+      const folderObjects = folderDirs.map(dir => ({
         id: dir.sha,
         name: dir.name,
         path: dir.path,
         lastModified: dir.sha,
-      })) as Folder[]);
+        notes: [] // Initialize with empty notes array to satisfy Folder type
+      }));
+      
+      // Set the folders state
+      setFolders(folderObjects);
     } catch (error) {
       setError('Failed to fetch folders from GitHub');
       setFolders([]);
@@ -359,6 +561,13 @@ export const NoteProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Only call fetchNotes/fetchFolders when authState and selectedRepository are set
   useEffect(() => {
     if (authState.isAuthenticated && selectedRepository) {
+      // Clear local notes when repository changes to prevent showing stale notes
+      setNotes([]);
+      setFolders([]);
+      setCurrentNote(null);
+      sessionStorage.removeItem('commitpad_current_note');
+      
+      // Then fetch fresh notes from the selected repository
       fetchNotes();
       fetchFolders();
     }
