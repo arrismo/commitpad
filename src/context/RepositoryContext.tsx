@@ -25,16 +25,18 @@ export const RepositoryProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Load selected repository from localStorage
-    const storedRepo = localStorage.getItem(SELECTED_REPO_KEY);
-    if (storedRepo && authState.isAuthenticated) {
-      try {
-        setSelectedRepository(JSON.parse(storedRepo));
-      } catch (e) {
-        localStorage.removeItem(SELECTED_REPO_KEY);
+    // Load selected repository from localStorage only after auth is fully loaded and authenticated
+    if (!authState.loading && authState.isAuthenticated) {
+      const storedRepo = localStorage.getItem(SELECTED_REPO_KEY);
+      if (storedRepo) {
+        try {
+          setSelectedRepository(JSON.parse(storedRepo));
+        } catch (e) {
+          localStorage.removeItem(SELECTED_REPO_KEY);
+        }
       }
     }
-  }, [authState.isAuthenticated]);
+  }, [authState.loading, authState.isAuthenticated]);
 
   const fetchRepositories = useCallback(async () => {
     if (!authState.isAuthenticated) return;
